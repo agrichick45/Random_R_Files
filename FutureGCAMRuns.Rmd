@@ -1,0 +1,307 @@
+---
+title: "GCAMFutures"
+output: html_document
+date: "2023-09-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+# Reference Levels
+```{r}
+#Uploading the soil Carbon Series land use change into the future
+#Series 84
+
+s84<-read_csv("s84_land_cover_basin.csv")
+
+#Split csv columns
+delim<-separate_wider_delim(s84, col=Variable, "|", names = c("Type", "LandUse", "Management"), too_few=c("align_start"))
+
+
+delimNA <- mutate_all(delim, ~replace_na(.,"Sum"))
+
+
+
+
+#filter to reference scenario
+totalRef<-filter(delimNA, scenario == "REF" & Type == 'LandCover' & LandUse != 'Total', Management != 'Total')
+
+#Create the column to match the historic data
+totalRef$Land_Type <- paste(totalRef$Management, totalRef$LandUse, sep="")
+
+#Remove extra columns
+subsetRef <- subset(totalRef, select = -c(Type, LandUse, Management)) 
+
+#Merge the basin names with GLU Code
+RefSet <- merge(GCAM_Basin_IDs, subsetRef, by.x= "GLU_Name", by.y='riverBasin', all=TRUE)
+
+RefSet<-na.omit(RefSet)
+
+#Convert from wide to long
+RefSetLong <-gather(RefSet, year, Mha, '2010':'2060')
+
+#Remove the excess columns 
+FinalRef <- subset(RefSetLong, select = c( GLU_code, GCAM_Basin_Name, GLU_Name, Basin_ID, region, Land_Type, year, Mha) )
+```
+
+# Corn Levels
+```{r}
+#filter to reference scenario
+totalCORN<-filter(delimNA, scenario == "CORN1BG" & Type == 'LandCover' & LandUse != 'Total', Management != 'Total')
+
+#Create the column to match the historic data
+totalCORN$Land_Type <- paste(totalCORN$Management, totalCORN$LandUse, sep="")
+
+#Remove extra columns
+subsetCORN <- subset(totalCORN, select = -c(Type, LandUse, Management)) 
+
+#Merge the basin names with GLU Code
+CornSet <- merge(GCAM_Basin_IDs, subsetCORN, by.x= "GLU_Name", by.y='riverBasin', all=TRUE)
+
+RefCORN<-na.omit(CornSet)
+
+#Convert from wide to long
+CornSetLong <-gather(RefCORN, year, Mha, '2010':'2060')
+
+#Remove the excess columns 
+FinalCorn <- subset(CornSetLong, select = c( GLU_code, GCAM_Basin_Name, GLU_Name, Basin_ID, region, Land_Type, year, Mha) )
+```
+
+
+# Soy Levels
+```{r}
+#filter to reference scenario
+totalSoy<-filter(delimNA, scenario == "SOY1BG" & Type == 'LandCover' & LandUse != 'Total', Management != 'Total')
+
+#Create the column to match the historic data
+totalSoy$Land_Type <- paste(totalSoy$Management, totalSoy$LandUse, sep="")
+
+#Remove extra columns
+subsetSoy <- subset(totalSoy, select = -c(Type, LandUse, Management)) 
+
+#Merge the basin names with GLU Code
+SoySet <- merge(GCAM_Basin_IDs, subsetSoy, by.x= "GLU_Name", by.y='riverBasin', all=TRUE)
+
+RefSoy<-na.omit(SoySet)
+
+#Convert from wide to long
+SoySetLong <-gather(RefSoy, year, Mha, '2010':'2060')
+
+#Remove the excess columns 
+FinalSoy <- subset(SoySetLong, select = c( GLU_code, GCAM_Basin_Name, GLU_Name, Basin_ID, region, Land_Type, year, Mha) )
+```
+
+
+# Global Additions Reference Levels
+```{r}
+#Reference Total
+sumTotal<-FinalRef %>%
+  group_by(year) %>%
+  summarize(sumTotal=sum(Mha))
+
+sumGlobe <- FinalRef %>%
+  group_by(Land_Type, year) %>%
+  summarize(sum=sum(Mha)) 
+
+#merge sumGlobe and SumTotal
+sumPerFut<-merge(sumGlobe, sumTotal, by='year', all=TRUE)
+
+sumPerFut$perGlobe<-sumPerFut$sum/sumPerFut$sumTotal
+
+sumPerFut$year<-as.numeric(sumPerFut$year)
+
+sumPerFut$Land_Type  <- gsub('Sum','', sumPerFut$Land_Type)
+sumPerFut$Land_Type  <- gsub('Managed','', sumPerFut$Land_Type)
+
+sumPerFut$Land_Type  <- ifelse(sumPerFut$Land_Type  == "Cropland", "HarvCropLand" , sumPerFut$Land_Type )
+
+
+ggplot(sumPerFut, aes(x=year, y=perGlobe, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")
+
+```
+
+# Global Additions Corn Levels
+```{r}
+#Reference Total
+sumCorn<-FinalCorn %>%
+  group_by(year) %>%
+  summarize(sumTotal=sum(Mha))
+
+sumGlobeCorn <- FinalCorn %>%
+  group_by(Land_Type, year) %>%
+  summarize(sum=sum(Mha)) 
+
+#merge sumGlobe and SumTotal
+sumPerFutCorn<-merge(sumGlobeCorn, sumCorn, by='year', all=TRUE)
+
+sumPerFutCorn$perGlobeCorn<-sumPerFutCorn$sum/sumPerFutCorn$sumTotal
+
+sumPerFutCorn$year<-as.numeric(sumPerFutCorn$year)
+
+sumPerFutCorn$Land_Type  <- gsub('Sum','', sumPerFutCorn$Land_Type)
+sumPerFutCorn$Land_Type  <- gsub('Managed','', sumPerFutCorn$Land_Type)
+
+sumPerFutCorn$Land_Type  <- ifelse(sumPerFutCorn$Land_Type  == "Cropland", "HarvCropLand" , sumPerFutCorn$Land_Type )
+
+ggplot(sumPerFutCorn, aes(x=year, y=perGlobeCorn, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")
+
+```
+
+# Global Additions Soy Levels
+```{r}
+#Reference Total
+sumSoy<-FinalSoy %>%
+  group_by(year) %>%
+  summarize(sumTotal=sum(Mha))
+
+sumGlobeSoy <- FinalSoy %>%
+  group_by(Land_Type, year) %>%
+  summarize(sum=sum(Mha)) 
+
+#merge sumGlobe and SumTotal
+sumPerFutSoy<-merge(sumGlobeSoy, sumSoy, by='year', all=TRUE)
+
+sumPerFutSoy$perGlobeSoy<-sumPerFutSoy$sum/sumPerFutSoy$sumTotal
+
+sumPerFutSoy$year<-as.numeric(sumPerFutSoy$year)
+
+sumPerFutSoy$Land_Type  <- gsub('Sum','', sumPerFutSoy$Land_Type)
+sumPerFutSoy$Land_Type  <- gsub('Managed','', sumPerFutSoy$Land_Type)
+
+sumPerFutSoy$Land_Type  <- ifelse(sumPerFutSoy$Land_Type  == "Cropland", "HarvCropLand" , sumPerFutSoy$Land_Type )
+
+ggplot(sumPerFutSoy, aes(x=year, y=perGlobeSoy, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")
+
+```
+
+# Basin Additions Reference
+
+```{r}
+# Sum Everything together
+basinFutTotal<-FinalRef %>%
+  group_by(GCAM_Basin_Name, year) %>%
+  summarize(sumTotal=sum(Mha))
+
+# 
+sumBasin<- FinalRef %>%
+  group_by(GCAM_Basin_Name, GLU_code, Land_Type, year) %>%
+  summarize(sum=sum(Mha))
+
+FutBasinPer = merge(sumBasin, basinTotal, by.x=c("GCAM_Basin_Name", "year"), by.y=c("GCAM_Basin_Name", "year"), all=TRUE)
+
+FutBasinPer$perBasin<-FutBasinPer$sum/FutBasinPer$sumTotal
+
+FutBasinPer$year<-as.numeric(FutBasinPer$year)
+
+FutBasinPer$Land_Type  <- gsub('Sum','', FutBasinPer$Land_Type)
+FutBasinPer$Land_Type  <- gsub('Managed','', FutBasinPer$Land_Type)
+
+FutBasinPer$Land_Type  <- ifelse(FutBasinPer$Land_Type  == "Cropland", "HarvCropLand" , FutBasinPer$Land_Type )
+
+
+```
+
+# Basin Additions Corn Shock
+
+```{r}
+# Sum Everything together
+basinCornTotal<-FinalCorn %>%
+  group_by(GCAM_Basin_Name, year) %>%
+  summarize(sumTotal=sum(Mha))
+
+# 
+sumCornBasin<- FinalCorn %>%
+  group_by(GCAM_Basin_Name, GLU_code, Land_Type, year) %>%
+  summarize(sum=sum(Mha))
+
+FutBasinCornPer = merge(sumCornBasin, basinCornTotal, by.x=c("GCAM_Basin_Name", "year"), by.y=c("GCAM_Basin_Name", "year"), all=TRUE)
+
+FutBasinCornPer$perCornBasin<-FutBasinCornPer$sum/FutBasinCornPer$sumTotal
+
+FutBasinCornPer$year<-as.numeric(FutBasinCornPer$year)
+
+FutBasinCornPer$Land_Type  <- gsub('Sum','', FutBasinCornPer$Land_Type)
+FutBasinCornPer$Land_Type  <- gsub('Managed','', FutBasinCornPer$Land_Type)
+
+FutBasinCornPer$Land_Type  <- ifelse(FutBasinCornPer$Land_Type  == "Cropland", "HarvCropLand" , FutBasinCornPer$Land_Type )
+
+
+```
+
+# Basin Additions Soy Shock
+
+```{r}
+# Sum Everything together
+basinSoyTotal<-FinalSoy %>%
+  group_by(GCAM_Basin_Name, year) %>%
+  summarize(sumTotal=sum(Mha))
+
+# 
+sumSoyBasin<- FinalSoy %>%
+  group_by(GCAM_Basin_Name, GLU_code, Land_Type, year) %>%
+  summarize(sum=sum(Mha))
+
+FutBasinSoyPer = merge(sumSoyBasin, basinSoyTotal, by.x=c("GCAM_Basin_Name", "year"), by.y=c("GCAM_Basin_Name", "year"), all=TRUE)
+
+FutBasinSoyPer$perSoyBasin<-FutBasinSoyPer$sum/FutBasinSoyPer$sumTotal
+
+FutBasinSoyPer$year<-as.numeric(FutBasinSoyPer$year)
+
+FutBasinSoyPer$Land_Type  <- gsub('Sum','', FutBasinSoyPer$Land_Type)
+FutBasinSoyPer$Land_Type  <- gsub('Managed','', FutBasinSoyPer$Land_Type)
+
+FutBasinSoyPer$Land_Type  <- ifelse(FutBasinSoyPer$Land_Type  == "Cropland", "HarvCropLand" , FutBasinSoyPer$Land_Type )
+
+
+```
+
+
+```{r}
+#Selecting Basins we want to see
+Missouri<-FutBasinPer %>%
+  subset(GCAM_Basin_Name=='Missouri_River_Basin')
+
+MissouriCorn<-FutBasinCornPer %>%
+  subset(GCAM_Basin_Name=='Missouri_River_Basin')
+
+MissouriSoy<-FutBasinSoyPer %>%
+  subset(GCAM_Basin_Name=='Missouri_River_Basin')
+
+ggplot(Missouri, aes(x=year, y=perBasin, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , linewidth=1, colour="black")
+
+ggplot(MissouriCorn, aes(x=year, y=perCornBasin, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , linewidth=1, colour="black")
+
+ggplot(MissouriSoy, aes(x=year, y=perSoyBasin, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , linewidth=1, colour="black")
+
+```
+
+```{r}
+
+LaPlata<-FutBasinPer %>%
+  subset(GCAM_Basin_Name=='La_Plata')
+
+LaPlataCorn<-FutBasinCornPer %>%
+  subset(GCAM_Basin_Name=='La_Plata')
+
+LaPlataSoy<-FutBasinSoyPer %>%
+  subset(GCAM_Basin_Name=='La_Plata')
+
+ggplot(LaPlata, aes(x=year, y=perBasin, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")
+
+ggplot(LaPlataCorn, aes(x=year, y=perCornBasin, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")
+
+ggplot(LaPlataSoy, aes(x=year, y=perSoyBasin, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")
+```

@@ -1,0 +1,101 @@
+Number,Group,WetlandClass,Description
+0,Ocean,0,
+1,Shifting Sand,0,
+2,Rock,0,
+3,Ice,0,
+4,,,
+5,Histels,4,"Organic soils similar to histosols except that they have permafrost within two meters below ground surface. They have 80% or more organic materials from the soil surface to a depth of 50 cm or to a glacic layer or densic, lithic, or paralithic contact, whichever is shallowest. These soils occur redominantely in subarctic and low arctic regions of continuous or widespread permafrost."
+6,Turbels,4,"Soils that show marked influence of cryoturbation (more than one-third of the depth of the active layer) such as irregular, broken, or distorted horizon boundaries and involutions and areas with patterned ground. They commonly contain tongues of mineral and organic horizons, organic and mineral intrusions and oriented rock fragments."
+7,Orthels,4,"Soils that show little or no cryoturbation (less than one-third of the depth of the active layer). Patterned ground (except for polygons) generally is lacking. Orthels occur primarily within the zone of discontinuous permafrost, and in alpine areas."
+8,,,
+9,,,
+10,Folists,1,Histosols that are not saturated with water for long periods of time during the year.
+11,Fibrists,1,"Histosols that are primarily made up of only slightly decomposed organic materials, often called peat."
+12,Hemists,1,Histosols that are primarily made up of moderately decomposed organic materials.
+13,Saprists,1,"Histosols that are primarily made up of highly decomposed organic materials, often called muck."
+14,,,
+15,Aquods,2,Poorly drained Spodosols with a water table at or near the surface for much of the year.
+16,Cryods,0,Spodosols of cold climates.
+17,Humods,3,Well-drained Spodosols that contain relatively large quantities of organic matter.
+18,Orthods,0,Common Spodosols that don't meet requirements of other suborders.
+19,Gelods,5,Spodosols of very cold cimates (mean annual soil temperature <0°C).
+20,Aquands,2,Andisols with a water table at or near the surface for much of the year.
+21,Cryands,0,Andisols of cold climates.
+22,Torrands,0,Andisols of very dry climates.
+23,Xerands,0,Temperate Andisols with very dry summers and moist winters.
+24,Vitrands,0,Relatively young Andisols that are coarse-textured and dominated by glass.
+25,Ustands,0,Andisols of semiarid and sub humid climates.
+26,Udands,0,Andisols of humid climates.
+27,Gelands,5,Andisols of very cold climates (mean annual temperature <0°C).
+28,,,
+29,,,
+30,Aquox,2,Oxisols with a water table at or near the surface for much of the year.
+31,Torrox,0,"Oxisols of arid climates. Because the present climate can never produce enough weathering to produce oxisols, torrox soils are always paleosols formed during periods of much wetter climates. They occur mainly in Southern Africa."
+32,Ustox,0,Oxisols of semiarid and subhumid climates.
+33,Perox,0,"Oxisols of continuously humid climates, where precipitation exceeds evapotranspiration in all months."
+34,Udox,0,Oxisols of humid climates.
+35,,,
+36,,,
+37,,,
+38,,,
+39,,,
+40,Aquerts,2,"Vertisols which are subdued aquic conditions for some time in most years and show redoximorphic features are grouped as Aquerts. Because of the high clay content, the permeability is slowed down and aquic conditions are likely to occur."
+41,Cryerts,0,Vertisols with a cryic soil temperature regime. Cryerts are most extensive in the grassland and forest-grassland transitions zones of the Canadian Prairies and at similar latitudes in Russia.
+42,Xererts,0,"Vertisols with a thermic, mesic, or frigid soil temperature regime."
+43,Torrerts,0,"Vertisols with cracks that are closed for less than 60 consecutive days when the soil temperature at 50 cm is above 8°C. These soils are not extensive in the U.S., and occur mostly in west Texas, New Mexico, Arizona, and South Dakota, but are the most extensive suborder of Vertisols in Australia."
+44,Usterts,0,"Vertisols with cracks that are open for at least 90 cumulative days per year. Globally, this suborder is the most extensive of the Vertisols order, encompassing the Vertisols of the tropics and monsoonal climates in Australia, India, and Africa. In the U.S. the Usterts are common in Texas, Montana, Hawaii, and California."
+45,Uderts,0,"Vertisols with cracks that are open less than 90 cumulative days per year and less than 60 consecutive days during the summer. In some areas, cracks open only in drought years. Uderts are of small extent globally, being most abundant in Uruguay and eastern Argentina, but also found in parts of Queensland and the ""Black Belt"" of Mississippi and Alabama."
+46,,,
+47,,,
+48,,,
+49,,,
+50,Cryids,0,Aridisols of cold climates.
+51,Salids,0,Aridisols with soluble salt accumulation.
+52,Durids,0,Aridisols with a SiO2- cemented subsurface horizon.
+53,Gypsids,0,Aridisols with gypsum accumulation.
+54,Argids,0,Aridisols with clay accumulation.
+55,Calcids,0,Aridisols with CaCO3 accumulation.
+56,Cambids,0,Aridisols with a weakly developed B horizon.
+57,,,
+58,,,
+59,,,
+60,Aquults,2,Ultisols with a water table at or near the surface for much of the year.
+61,Humults,3,Well-drained ultisols that have high organic matter content.
+62,Udults,0,Ultisols of humid climates.
+63,Ustults,0,Ultisols of semiarid and subhumid climates.
+64,Xerults,0,Temperate ultisols with very dry summers and moist winters.
+65,,,
+66,,,
+67,,,
+68,,,
+69,Borolls,0,"Mollisol, characterized by a mean annual soil temperature of less than 8°C and by never being dry for 60 consecutive days during the 90-day period following the summer solstice."
+70,Albolls,2,Mollisols wet soils; aquic soil moisture regime with an eluvial horizon.
+71,Aquolls,2,Mollisols wet soils; aquic soil moisture regime.
+72,Rendolls,0,Mollisols with lime parent material.
+73,Xerolls,0,Mollisols in mediteranaean climate; xeric moisture regime.
+74,Cryolls,0,Mollisols in cold climate; frigid or cryic soil temperature regime.
+75,Ustolls,0,Mollisols with subhumid climate; ustic moisture regime.
+76,Udolls,0,Mollisols in humid climate; udic moisture regime.
+77,Gelolls,5,Mollisols with very cold climate; mean annual soil temperature <0°C.
+78,,,
+79,,,
+80,Aqualfs,2,Alfisols with a water table close to the surface.
+81,Cryalfs,0,Alfisols in cold climates.
+82,Ustalfs,0,Alfisols in semiarid and sub-humid climates.
+83,Xeralfs,0,Alfisols in areas with very dry summers and moist winters.
+84,Udalfs,0,Alfisols in humid climates.
+85,Udepts,0,Inceptisols in humid climates.
+86,Gelepts,5,Inceptisols of very cold climates (mean annual soil temperature <0°C).
+87,,,
+88,,,
+89,Ochrepts,0,Inceptisols formed in cold or temperate climates and that commonly have an ochric epipedon and a cambic horizon. They may have an umbric or mollic epipedon <25 cm thick or a fragipan or duripan under certain conditions.
+90,Aquepts,2,Inceptisols with a water table close to the surface.
+91,Anthrepts,0,Inceptisols modified by human habitation and farming.
+92,Cryepts,0,Inceptisols in cold climates.
+93,Ustepts,0,Inceptisols in semiarid and sub-humid climates.
+94,Xerepts,0,Inceptisols in areas with very dry summers and moist winters.
+95,Aquents,2,"Entisols with permanently or usually wet soils formed on river banks, tidal mudflats etc. Here, general wetness limits development."
+96,Arents,0,"Anthropogenic soils: diagnostic horizons cannot develop because of deep mixing through plowing, spading, or other methods of moving by humans."
+97,Psamments,0,Entisols that are sandy in all layers where development is precluded by the impossibility of weathering the sand. Formed from shifting or glacial sand dunes.
+98,Fluvents,0,"Alluvial soils where development is prevented by repeated deposition of sediment in periodic floods. Found in valleys and deltas of rivers, especially those with high sediment load."
+99,Orthents,0,"Shallow or ""skeletal soils"". Found on recent erosional surfaces or very old landforms completely devoid of weatherable minerals."

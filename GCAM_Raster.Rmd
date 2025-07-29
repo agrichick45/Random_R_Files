@@ -1,0 +1,50 @@
+---
+title: "GCAM Land carbon"
+author: "Kathe Todd-Brown <ktoddbrown@ufl.edu>"
+date: "2023-10-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Set up values of an individual cell
+GCAM.sim.df <- tibble(year = 1700:2015) %>%
+  #Simulate a change from grassland to cropland in the year 1850 for one grid cell
+  mutate(landuse = case_when(year < 1850 ~'grassland',
+                             TRUE ~ 'cropland'), 
+         #add the soil calculation column for later as the NA
+         carbon_stock  = NA)
+
+soil_inital_stock <- 90
+
+
+#Calculate the k value decomposition rate for the Missouri River Basin
+
+#κ=log(2) / (s/10.0)
+aSoilTimeScale = 50
+halfLife = aSoilTimeScale / 10.0
+log2 = log( 2.0 )
+lambda = log2 / halfLife
+
+
+#Total Carbon Stock 
+
+#Soil Carbon Emissions
+E_soil_y = soil_inital_stock * [(1.0-exp(-1*lambda*(y-t)))]
+
+
+```
+
+
+
+```{r}
+ggplot(ans %>%
+         pivot_longer(c(veg_carbon_mass, soil_carbon_mass, land_area), names_to = 'variable')) +
+  geom_line(aes(x=year, y = value, color = land_use)) +
+  facet_wrap(~variable)
+```

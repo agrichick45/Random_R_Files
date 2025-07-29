@@ -1,0 +1,807 @@
+---
+title: "Peatlands Project"
+author: "Mandy Liesch"
+date: "`r Sys.Date()`"
+output: html_document
+  toc: TRUE
+  number_sections: TRUE
+  toc_float: TRUE
+  theme: cerulean
+  code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overall Workflow 
+
+A note about the Tropical Peatlands Raster: The [Xu et al., 2017](https://www.sciencedirect.com/science/article/abs/pii/S0341816217303004?via%3Dihub) paper created a repository of global peatlands stored at the [Leeds Repository](https://archive.researchdata.leeds.ac.uk/251/). There is a detailed [source review](https://archive.researchdata.leeds.ac.uk/251/2/PEATMAP_data_sources.pdf) for all global areas. This review centers only on those prone to land use change 
+
+```{r}
+library(terra)
+library(tidyverse)
+library(raster)
+library(exactextractr)
+library(sp)
+library(rgdal)
+library(sf)
+
+
+
+# On a side note, all of the 
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Peatlands")
+
+tropPeat<-rast("tropicalPeat.tif")
+
+plot(tropPeat)
+
+notPeatMask<- classify(tropPeat, cbind(id=c(NA, 1),
+                                        v=c(1, NA)))
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilC<-rast("GlobalCarbonSoilRaster_SoilGrid_2021.04.12.tif")
+
+plot(soilC)
+
+terra::project(tropPeat, soilC, filename='reproj_tropPeat.tif')
+
+reprojTropPeat<-rast('reproj_tropPeat.tif')
+
+terra::project(notPeatMask, soilC, filename='reproj_mineral.tif')
+
+reprojMineral<-rast('reproj_mineral.tif')
+
+
+SOC_peat<- mask(soilC, reprojTropPeat, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC_Peatland_Mask.tif", overwrite=TRUE)
+
+SOC_peat<-rast("SOC_Peatland_Mask.tif")
+
+SOC_mineral<- mask(soilC, reprojMineral, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC_Mineral_Mask.tif", overwrite=TRUE)
+
+SOC_mineral<-rast("SOC_Mineral_Mask.tif")
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+#Use the dplyr package and the tidyverse notation to create the polygons to dissolve into. 
+
+Basin.ID <- BasinShapeFile_igh %>% 
+    group_by(basin_id) %>% 
+    summarise() 
+
+#check the basins overall
+
+ggplot(Basin.ID) + geom_sf(aes(fill = 'Basins'))
+#check the basins overall
+mapFile<-BasinShapeFile_igh
+mapFile2 = filter(mapFile, !(reg_nm %in%  c("Argentina", "Australia_NZ", "Canada", "Central Asia", "EU-12", "EU-15", "Europe_Eastern", "Europe_Non_EU", "Mexico", "European Free Trade Association", "Russia", "South Africa", "USA", "Japan" )))
+mapFile3 = filter(mapFile2, !(basin_nm %in% c("South_Chile_Pacific_Coast", "North_Chile_Pacific_Coast", "South_Argentina_South_Atlantic_Coast", "Russia_South_East_Coast", "Gobi_Interior", "Ob", "Amur", "Bo_Hai_Korean_Bay_North_Coast", "Amu_Darya", "Lake_Balkash", "Syr_Darya")))
+
+BasinShapeFile_igh<-mapFile3
+
+BasinShapeFile_igh$PeatArea <- exact_extract(SOC_peat, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$TotArea <- exact_extract(soilC, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$PeatMean<- exact_extract(SOC_peat, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$TotmeanC <- exact_extract(soilC, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$MineralMean <- exact_extract(SOC_mineral, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$PeatMin<- exact_extract(SOC_peat, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$TotMinC <- exact_extract(soilC, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$PeatMax<- exact_extract(SOC_peat, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$TotMax <- exact_extract(soilC, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$PeatQ5<- exact_extract(SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$TotQ5C <- exact_extract(soilC, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$PeatQ1<- exact_extract(SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$TotQ1C <- exact_extract(soilC, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$PeatMedian<- exact_extract(SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$TotmedianC <- exact_extract(soilC, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$PeatQ3<-exact_extract(SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$TotQ3C <- exact_extract(soilC, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$Peat95<- exact_extract(SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+BasinShapeFile_igh$Tot95C <- exact_extract(soilC, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+
+
+BasinShapeFile_igh$MineralMin <- exact_extract(SOC_mineral, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$MineralMax <- exact_extract(SOC_mineral, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$MineralQ5<- exact_extract(SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$MineralQ1<- exact_extract(SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$Mineralmedian<- exact_extract(SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$MineralQ3<- exact_extract(SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$MineralQ95<- exact_extract(SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+
+peatOutput<-BasinShapeFile_igh
+peatOutput$geometry<-NULL
+write.csv(peatOutput, "peatOutput.csv")
+
+#Intermediary Step
+# peatSoils<-read_csv("peatOutput.csv")
+# peatSoils$basin_nm<-NULL
+# peatSoils$reg_nm<-NULL
+# peatSoils$basin_id<-NULL
+# peatSoils$reg_id<-NULL
+# mapFile<-merge(peatOutput, peatSoils, by='key')
+# Use the 
+mapFile<- BasinShapeFile_igh
+mapFile$PerPeat<-as.numeric(mapFile$PerPeat)
+
+mapFile<- mapFile %>%
+  filter(!is.na(PerPeat))
+
+
+mapFile2 = filter(mapFile, !(reg_nm %in%  c("Argentina", "Australia_NZ", "Canada", "Central Asia", "EU-12", "EU-15", "Europe_Eastern", "Europe_Non_EU", "Mexico", "European Free Trade Association", "Russia", "South Africa", "USA", "Japan" ))) 
+                  
+mapFile3 = filter(mapFile2, !(basin_nm %in% c("South_Chile_Pacific_Coast", "North_Chile_Pacific_Coast", "South_Argentina_South_Atlantic_Coast", "Russia_South_East_Coast", "Gobi_Interior", "Ob", "Amur", "Bo_Hai_Korean_Bay_North_Coast", "Amu_Darya", "Lake_Balkash", "Syr_Darya")))
+
+maps<-st_as_sf(mapFile3)
+
+ggplot(maps)+ 
+  geom_sf(aes(fill=PerPeat))
+
+```
+
+## Results {.tabset .tabset-pills}
+```{r}
+# Create ggplots
+
+ggplot(maps)+ 
+  geom_sf(aes(fill=PeatQ1))
+
+ggplot(maps)+ 
+  geom_sf(aes(fill=PeatMedian))
+
+ggplot(maps)+ 
+  geom_sf(aes(fill=PeatQ3))
+
+ggplot(maps)+ 
+  geom_sf(aes(fill=MineralQ1)) +
+  scale_fill_gradientn(values = scales::rescale(c(min(PeatQ1),  max(PeatQ1))), colours = terrain.colors(10))
+
+ggplot(maps)+ 
+  geom_sf(aes(fill=Mineralmedian))
+
+ggplot(maps)+ 
+  geom_sf(aes(fill=MineralQ3))
+
+mapFile4 <- mapFile3 %>% mutate(category=cut(PerPeat, breaks=c(0,1.5,5,20), labels=c("low < 1.5%","middle","high: > 5%")))
+
+maps1<-st_as_sf(mapFile4)
+
+ggplot(maps1)+ 
+  geom_sf(aes(fill=category))
+
+maps2<- maps %>% na.omit
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=MineralQ5)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ5),  max(maps2$PeatQ5)), colours = rev(terrain.colors(10)))
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=PeatQ5)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ5),  max(maps2$PeatQ5)), colours = rev(terrain.colors(10)))
+
+
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=MineralQ1)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ1),  max(maps2$PeatQ1)), colours = rev(terrain.colors(10)))
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=PeatQ1)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ1),  max(maps2$PeatQ1)), colours = rev(terrain.colors(10)))
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=Mineralmedian)) +
+    scale_fill_gradientn(limits = c(min(maps2$Mineralmedian),  max(maps2$PeatMedian)), colours = rev(terrain.colors(10)))
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=PeatMedian)) +
+    scale_fill_gradientn(limits = c(min(maps2$Mineralmedian),  max(maps2$PeatMedian)), colours = rev(terrain.colors(10)))
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=MineralQ3)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ3),  max(maps2$PeatQ3)), colours = rev(terrain.colors(10)))
+
+ggplot(maps2)+ 
+    geom_sf(aes(fill=PeatQ3)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ3),  max(maps2$PeatQ3)), colours = rev(terrain.colors(10)))
+
+
+sp <- ggscatter(maps1, x = "PeatMedian", y = "Mineralmedian",
+                add = "reg.line",               # Add regression line
+                conf.int = TRUE,                # Add confidence interval
+                color = "category",  # Color by groups "cyl"
+                #shape = "category"                   # Change point shape by groups "cyl"
+                )+
+  stat_cor(aes(color = category), label.x = 3)       # Add correlation coefficient
+sp
+
+#Set up for dumbbell plots and boxplots
+peatData<-peatTable
+peatData$geometry<-NULL
+
+peatValues<-peatData %>%
+  dplyr::select(1:5, contains('Peat')) 
+
+for ( col in 1:ncol(peatValues)){
+    colnames(peatValues)[col] <-  sub("Peat", "", colnames(peatValues)[col])
+}
+
+peatValues$Per<-NULL
+peatValues$Area<-NULL
+peatValues$Type<-'Peat'
+
+
+totValues<- peatData %>%
+  dplyr::select(1:5, contains('Tot')) 
+
+for ( col in 1:ncol(totValues)){
+    colnames(totValues)[col] <-  sub("Tot", "", colnames(totValues)[col])
+}
+
+
+for ( col in 1:ncol(totValues)){
+    colnames(totValues)[col] <-  sub("C", "", colnames(totValues)[col])
+}
+
+for ( col in 6:ncol(totValues)){
+   colnames(totValues)[col] <-  str_to_title(colnames(totValues)[col])
+}
+
+
+
+totValues <- totValues %>%
+  str_to_title(totValues[6:14])
+
+totValues$Type <-'Total'
+totValues$Area<-NULL
+
+minColumns<-peatData %>%
+  dplyr::select(1:5, contains('Miner')) 
+
+for ( col in 1:ncol(minColumns)){
+    colnames(minColumns)[col] <-  sub("Mineral", "", colnames(minColumns)[col])
+}
+
+minColumns<-rename(minColumns, '95' = Q95)
+
+for ( col in 6:ncol(minColumns)){
+   colnames(minColumns)[col] <-  str_to_title(colnames(minColumns)[col])
+}
+
+minColumns$Type <-'Mineral'
+
+peatSoilDB<- bind_rows(peatValues, minColumns)
+```
+
+## Second Raster: 
+```{r}
+#FAO 0-30 cm raster
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Peatlands")
+
+tropPeat<-rast("tropicalPeat.tif")
+
+plot(tropPeat)
+
+notPeatMask<- classify(tropPeat, cbind(id=c(NA, 1),
+                                        v=c(1, NA)))
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilFAOC<-rast("Reproject_FAO_100cm.tif")
+
+plot(soilFAOC)
+
+terra::project(tropPeat, soilFAOC, filename='FAO_reproj_tropPeat.tif')
+
+reprojFAOTropPeat<-rast('FAO_reproj_tropPeat.tif')
+
+compareGeom(soilFAOC, reprojFAOTropPeat, crs=TRUE)
+
+
+terra::project(notPeatMask, soilFAOC, filename='FAO_reproj_mineral.tif')
+
+reprojFAOMineral<-rast('FAO_reproj_mineral.tif')
+
+compareGeom(soilFAOC, reprojFAOMineral, crs=TRUE)
+
+FAO_SOC_peat<- mask(soilFAOC, reprojFAOTropPeat, 
+                           inverse = FALSE, updatevalue = NA, filename = "FAO_SOC_Peatland_Mask.tif", overwrite=TRUE)
+
+FAO_SOC_peat<-rast("FAO_SOC_Peatland_Mask.tif")
+
+FAO_SOC_mineral<- mask(soilFAOC, reprojFAOMineral, 
+                           inverse = FALSE, updatevalue = NA, filename = "FAO_SOC_Mineral_Mask.tif", overwrite=TRUE)
+
+FAO_SOC_mineral<-rast("FAO_SOC_Mineral_Mask.tif")
+```
+
+```{r}
+#Shapefile Extraction, FAO Data
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+
+#check the basins overall
+mapFile<-BasinShapeFile_igh
+mapFile2 = filter(mapFile, !(reg_nm %in%  c("Argentina", "Australia_NZ", "Canada", "Central Asia", "EU-12", "EU-15", "Europe_Eastern", "Europe_Non_EU", "Mexico", "European Free Trade Association", "Russia", "South Africa", "USA", "Japan" )))
+mapFile3 = filter(mapFile2, !(basin_nm %in% c("South_Chile_Pacific_Coast", "North_Chile_Pacific_Coast", "South_Argentina_South_Atlantic_Coast", "Russia_South_East_Coast", "Gobi_Interior", "Ob", "Amur", "Bo_Hai_Korean_Bay_North_Coast", "Amu_Darya", "Lake_Balkash", "Syr_Darya")))
+
+BasinShapeFile_igh<-mapFile3
+
+BasinShapeFile_igh$PeatArea <- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$TotArea <- exact_extract(soilFAOC, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$PeatMean<- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$TotmeanC <- exact_extract(soilFAOC, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$MineralMean <- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$PeatMin<- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$TotMinC <- exact_extract(soilFAOC, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$MineralMin <- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$PeatMax<- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$TotMax <- exact_extract(soilFAOC, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$MineralMax <- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$PeatQ5<- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$TotQ5C <- exact_extract(soilFAOC, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$MineralQ5<- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$PeatQ1<- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$TotQ1C <- exact_extract(soilFAOC, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$MineralQ1<- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$PeatMedian<- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$TotmedianC <- exact_extract(soilFAOC, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$Mineralmedian<- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$PeatQ3<-exact_extract(FAO_SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$TotQ3C <- exact_extract(soilFAOC, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$MineralQ3<- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$Peat95<- exact_extract(FAO_SOC_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+BasinShapeFile_igh$Tot95C <- exact_extract(soilFAOC, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+BasinShapeFile_igh$MineralQ95<- exact_extract(FAO_SOC_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+FAOpeatOutput<-BasinShapeFile_igh
+
+FAOpeatOutput$geometry<-NULL
+write.csv(FAOpeatOutput, "FAOpeatOutput.csv")
+
+
+```
+
+```{r}
+#Set up for dumbbell plots and boxplots
+peatFAOData<-FAOpeatOutput
+peatFAOData$geometry<-NULL
+
+peatFAOValues<-peatFAOData %>%
+  dplyr::select(1:5, contains('Peat')) 
+
+for ( col in 1:ncol(peatFAOValues)){
+    colnames(peatFAOValues)[col] <-  sub("Peat", "", colnames(peatFAOValues)[col])
+}
+
+peatFAOValues$Per<-NULL
+peatFAOValues$Area<-NULL
+peatFAOValues$Type<-'Peat'
+
+
+totFAOValues<- peatFAOData %>%
+  dplyr::select(1:5, contains('Tot')) 
+
+for ( col in 1:ncol(totFAOValues)){
+    colnames(totFAOValues)[col] <-  sub("Tot", "", colnames(totFAOValues)[col])
+}
+
+
+for ( col in 1:ncol(totFAOValues)){
+    colnames(totFAOValues)[col] <-  sub("C", "", colnames(totFAOValues)[col])
+}
+
+for ( col in 6:ncol(totFAOValues)){
+   colnames(totFAOValues)[col] <-  str_to_title(colnames(totFAOValues)[col])
+}
+
+
+
+totFAOValues <- totFAOValues %>%
+  str_to_title(totFAOValues[6:14])
+
+totFAOValues$Type <-'Total'
+totFAOValues$Area<-NULL
+
+minFAOColumns<-peatFAOData %>%
+  dplyr::select(1:5, contains('Miner')) 
+
+for ( col in 1:ncol(minFAOColumns)){
+    colnames(minFAOColumns)[col] <-  sub("Mineral", "", colnames(minFAOColumns)[col])
+}
+
+minFAOColumns<-rename(minFAOColumns, '95' = Q95)
+
+for ( col in 6:ncol(minFAOColumns)){
+   colnames(minFAOColumns)[col] <-  str_to_title(colnames(minFAOColumns)[col])
+}
+
+minFAOColumns$Type <-'Mineral'
+
+peatSoilFAODB<- bind_rows(peatFAOValues, minFAOColumns, totFAOValues)
+
+write.csv(peatSoilFAODB, "peatSoilFAODB.csv")
+```
+
+
+## Second Raster: 
+```{r}
+#FAO 0-30 cm raster
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Peatlands")
+
+tropPeat<-rast("tropicalPeat.tif")
+
+plot(tropPeat)
+
+notPeatMask<- classify(tropPeat, cbind(id=c(NA, 1),
+                                        v=c(1, NA)))
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilFAOC<-rast("Reproject_FAO_100cm.tif")
+
+plot(soilFAOC)
+
+terra::project(tropPeat, soilFAOC, filename='FAO_reproj_tropPeat.tif')
+
+reprojFAOTropPeat<-rast('FAO_reproj_tropPeat.tif')
+
+compareGeom(soilFAOC, reprojFAOTropPeat, crs=TRUE)
+
+
+terra::project(notPeatMask, soilFAOC, filename='FAO_reproj_mineral.tif')
+
+reprojFAOMineral<-rast('FAO_reproj_mineral.tif')
+
+compareGeom(soilFAOC, reprojFAOMineral, crs=TRUE)
+
+FAO_SOC_peat<- mask(soilFAOC, reprojFAOTropPeat, 
+                           inverse = FALSE, updatevalue = NA, filename = "FAO_SOC_Peatland_Mask.tif", overwrite=TRUE)
+
+FAO_SOC_peat<-rast("FAO_SOC_Peatland_Mask.tif")
+
+FAO_SOC_mineral<- mask(soilFAOC, reprojFAOMineral, 
+                           inverse = FALSE, updatevalue = NA, filename = "FAO_SOC_Mineral_Mask.tif", overwrite=TRUE)
+
+FAO_SOC_mineral<-rast("FAO_SOC_Mineral_Mask.tif")
+```
+
+
+### Third Raster
+```{r}
+# On a side note, all of the 
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Peatlands")
+
+tropPeat<-rast("tropicalPeat.tif")
+
+plot(tropPeat)
+
+notPeatMask<- classify(tropPeat, cbind(id=c(NA, 1),
+                                        v=c(1, NA)))
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilSG17C<-rast("SG2017stocks30cm.tif")
+
+plot(soilSG17C)
+
+terra::project(tropPeat, soilSG17C, filename='reproj_tropPeat.tif')
+
+reprojTropPeat<-rast('reproj_tropPeat.tif')
+
+terra::project(notPeatMask, soilSG17C, filename='reproj_mineral.tif')
+
+reprojMineral<-rast('reproj_mineral.tif')
+
+
+SOC17_peat<- mask(soilSG17C, reprojTropPeat, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOCSG17_Peatland_Mask.tif", overwrite=TRUE)
+
+SOC17_peat<-rast("SOCSG17_Peatland_Mask.tif" )
+
+SOC17_mineral<- mask(soilSG17C, reprojMineral, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOCSG17_Mineral_Mask.tif", overwrite=TRUE)
+
+SOC17_mineral<-rast("SOCSG17_Mineral_Mask.tif")
+```
+
+```{r}
+#Shapefile Extraction, SoilGrids 2017 Data 0-30 cm
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+
+#check the basins overall
+mapFile<-BasinShapeFile_igh
+mapFile2 = filter(mapFile, !(reg_nm %in%  c("Argentina", "Australia_NZ", "Canada", "Central Asia", "EU-12", "EU-15", "Europe_Eastern", "Europe_Non_EU", "Mexico", "European Free Trade Association", "Russia", "South Africa", "USA", "Japan" )))
+mapFile3 = filter(mapFile2, !(basin_nm %in% c("South_Chile_Pacific_Coast", "North_Chile_Pacific_Coast", "South_Argentina_South_Atlantic_Coast", "Russia_South_East_Coast", "Gobi_Interior", "Ob", "Amur", "Bo_Hai_Korean_Bay_North_Coast", "Amu_Darya", "Lake_Balkash", "Syr_Darya")))
+
+BasinShapeFile_igh<-mapFile3
+
+BasinShapeFile_igh$PeatArea <- exact_extract(SOC17_peat, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$TotArea <- exact_extract(soilSG17C, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$PeatMean<- exact_extract(SOC17_peat, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$TotmeanC <- exact_extract(soilSG17C, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$MineralMean <- exact_extract(SOC17_mineral, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$PeatMin<- exact_extract(SOC17_peat, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$TotMinC <- exact_extract(soilSG17C, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$MineralMin <- exact_extract(SOC17_mineral, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$PeatMax<- exact_extract(SOC17_peat, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$TotMax <- exact_extract(soilSG17C, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$MineralMax <- exact_extract(SOC17_mineral, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$PeatQ5<- exact_extract(SOC17_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$TotQ5C <- exact_extract(soilSG17C, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$MineralQ5<- exact_extract(SOC17_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$PeatQ1<- exact_extract(SOC17_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$TotQ1C <- exact_extract(soilSG17C, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$MineralQ1<- exact_extract(SOC17_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$PeatMedian<- exact_extract(SOC17_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$TotmedianC <- exact_extract(soilSG17C, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$Mineralmedian<- exact_extract(SOC17_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$PeatQ3<-exact_extract(SOC17_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$TotQ3C <- exact_extract(soilSG17C, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$MineralQ3<- exact_extract(SOC17_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$Peat95<- exact_extract(SOC17_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+BasinShapeFile_igh$Tot95C <- exact_extract(soilSG17C, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+BasinShapeFile_igh$MineralQ95<- exact_extract(SOC17_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+SOC17peatOutput<-BasinShapeFile_igh
+
+SOC17peatOutput$geometry<-NULL
+write.csv(SOC17peatOutput, "SOC17peatOutput.csv")
+
+
+```
+
+```{r}
+#Set up for dumbbell plots and boxplots
+peatSG17Data<-SOC17peatOutput
+peatSG17Data$geometry<-NULL
+
+peatSG17Values<-peatSG17Data %>%
+  dplyr::select(1:5, contains('Peat')) 
+
+for ( col in 1:ncol(peatSG17Values)){
+    colnames(peatSG17Values)[col] <-  sub("Peat", "", colnames(peatSG17Values)[col])
+}
+
+peatSG17Values$Per<-NULL
+peatSG17Values$Area<-NULL
+peatSG17Values$Type<-'Peat'
+
+
+totSG17Values<- peatSG17Data %>%
+  dplyr::select(1:5, contains('Tot')) 
+
+for ( col in 1:ncol(totSG17Values)){
+    colnames(totSG17Values)[col] <-  sub("Tot", "", colnames(totSG17Values)[col])
+}
+
+
+for ( col in 1:ncol(totSG17Values)){
+    colnames(totSG17Values)[col] <-  sub("C", "", colnames(totSG17Values)[col])
+}
+
+for ( col in 6:ncol(totSG17Values)){
+   colnames(totSG17Values)[col] <-  str_to_title(colnames(totSG17Values)[col])
+}
+
+
+
+totSG17Values$Type <-'Total'
+totSG17Values$Area<-NULL
+
+minSG17Columns<-peatSG17Data %>%
+  dplyr::select(1:5, contains('Miner')) 
+
+for ( col in 1:ncol(minSG17Columns)){
+    colnames(minSG17Columns)[col] <-  sub("Mineral", "", colnames(minSG17Columns)[col])
+}
+
+minSG17Columns<-rename(minSG17Columns, '95' = Q95)
+
+for ( col in 6:ncol(minSG17Columns)){
+   colnames(minSG17Columns)[col] <-  str_to_title(colnames(minSG17Columns)[col])
+}
+
+minSG17Columns$Type <-'Mineral'
+
+peatSoilSG17DB<- bind_rows(peatSG17Values, minSG17Columns, totSG17Values)
+
+write.csv(peatSoilSG17DB, "peatSoilSG17DB.csv")
+```
+
+
+
+
+
+
+### Original GCAM Raster
+```{r}
+# On a side note, all of the 
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Peatlands")
+
+tropPeat<-rast("tropicalPeat.tif")
+
+plot(tropPeat)
+
+notPeatMask<- classify(tropPeat, cbind(id=c(NA, 1),
+                                        v=c(1, NA)))
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilGCAMC<-rast("GCAM_SOC_Raster1.tif")
+
+plot(soilGCAMC)
+
+terra::project(tropPeat, soilGCAMC, filename='reproj_tropPeat.tif')
+
+reprojTropPeat<-rast('reproj_tropPeat.tif')
+
+terra::project(notPeatMask, soilGCAMC, filename='reproj_mineral.tif')
+
+reprojMineral<-rast('reproj_mineral.tif')
+
+
+SOCGCAM_peat<- mask(soilGCAMC, reprojTropPeat, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOCGCAM_Peatland_Mask.tif", overwrite=TRUE)
+
+SOCGCAM_peat<-rast("SOCGCAM_Peatland_Mask.tif" )
+
+SOCGCAM_mineral<- mask(soilGCAMC, reprojMineral, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOCGCAM_Mineral_Mask.tif", overwrite=TRUE)
+
+SOCGCAM_mineral<-rast("SOCGCAM_Mineral_Mask.tif")
+```
+
+```{r}
+#Shapefile Extraction, GCAM Data 0-30 cm
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+
+#check the basins overall
+mapFile<-BasinShapeFile_igh
+mapFile2 = filter(mapFile, !(reg_nm %in%  c("Argentina", "Australia_NZ", "Canada", "Central Asia", "EU-12", "EU-15", "Europe_Eastern", "Europe_Non_EU", "Mexico", "European Free Trade Association", "Russia", "South Africa", "USA", "Japan" )))
+mapFile3 = filter(mapFile2, !(basin_nm %in% c("South_Chile_Pacific_Coast", "North_Chile_Pacific_Coast", "South_Argentina_South_Atlantic_Coast", "Russia_South_East_Coast", "Gobi_Interior", "Ob", "Amur", "Bo_Hai_Korean_Bay_North_Coast", "Amu_Darya", "Lake_Balkash", "Syr_Darya")))
+
+BasinShapeFile_igh<-mapFile3
+
+BasinShapeFile_igh$PeatArea <- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$TotArea <- exact_extract(soilGCAMC, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$PeatMean<- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$TotmeanC <- exact_extract(soilGCAMC, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$MineralMean <- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$PeatMin<- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$TotMinC <- exact_extract(soilGCAMC, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$MineralMin <- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$PeatMax<- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$TotMax <- exact_extract(soilGCAMC, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$MineralMax <- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$PeatQ5<- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$TotQ5C <- exact_extract(soilGCAMC, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$MineralQ5<- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$PeatQ1<- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$TotQ1C <- exact_extract(soilGCAMC, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$MineralQ1<- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$PeatMedian<- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$TotmedianC <- exact_extract(soilGCAMC, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$Mineralmedian<- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.5)
+BasinShapeFile_igh$PeatQ3<-exact_extract(SOCGCAM_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$TotQ3C <- exact_extract(soilGCAMC, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$MineralQ3<- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$Peat95<- exact_extract(SOCGCAM_peat, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+BasinShapeFile_igh$Tot95C <- exact_extract(soilGCAMC, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+BasinShapeFile_igh$MineralQ95<- exact_extract(SOCGCAM_mineral, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+SOCGCAMpeatOutput<-BasinShapeFile_igh
+
+SOCGCAMpeatOutput$geometry<-NULL
+write.csv(SOCGCAMpeatOutput, "SOCGCAMpeatOutput.csv")
+
+
+```
+
+```{r}
+#Set up for dumbbell plots and boxplots
+peatGCAMData<-SOCGCAMpeatOutput
+peatGCAMData$geometry<-NULL
+
+peatGCAMValues<-peatGCAMData %>%
+  dplyr::select(1:5, contains('Peat')) 
+
+for ( col in 1:ncol(peatGCAMValues)){
+    colnames(peatGCAMValues)[col] <-  sub("Peat", "", colnames(peatGCAMValues)[col])
+}
+
+peatGCAMValues$Per<-NULL
+peatGCAMValues$Area<-NULL
+peatGCAMValues$Type<-'Peat'
+
+
+totGCAMValues<- peatGCAMData %>%
+  dplyr::select(1:5, contains('Tot')) 
+
+for ( col in 1:ncol(totGCAMValues)){
+    colnames(totGCAMValues)[col] <-  sub("Tot", "", colnames(totGCAMValues)[col])
+}
+
+
+for ( col in 1:ncol(totGCAMValues)){
+    colnames(totGCAMValues)[col] <-  sub("C", "", colnames(totGCAMValues)[col])
+}
+
+for ( col in 6:ncol(totGCAMValues)){
+   colnames(totGCAMValues)[col] <-  str_to_title(colnames(totGCAMValues)[col])
+}
+
+
+
+totGCAMValues$Type <-'Total'
+totGCAMValues$Area<-NULL
+
+minGCAMColumns<-peatGCAMData %>%
+  dplyr::select(1:5, contains('Miner')) 
+
+for ( col in 1:ncol(minGCAMColumns)){
+    colnames(minGCAMColumns)[col] <-  sub("Mineral", "", colnames(minGCAMColumns)[col])
+}
+
+minGCAMColumns<-rename(minGCAMColumns, '95' = Q95)
+
+for ( col in 6:ncol(minGCAMColumns)){
+   colnames(minGCAMColumns)[col] <-  str_to_title(colnames(minGCAMColumns)[col])
+}
+
+minGCAMColumns$Type <-'Mineral'
+
+peatSoilGCAMDB<- bind_rows(peatGCAMValues, minGCAMColumns, totGCAMValues)
+
+write.csv(peatSoilGCAMDB, "peatSoilGCAMDB.csv")
+```
+
+

@@ -1,0 +1,15 @@
+---
+title: "GCAM soil notes"
+author: "Kathe Todd-Brown <ktoddbrown@ufl.edu>"
+date: "2023-10-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Soil carbon modulo here: https://github.com/JGCRI/gcam-core/blob/master/cvs/objects/ccarbon_model/source/asimple_carbon_calc.cpp#L262 
+
+Documentation: https://jgcri.github.io/gcam-doc/land.html
+

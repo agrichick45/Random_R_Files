@@ -1,0 +1,74 @@
+---
+title: 'One pool model: forward rasters!'
+author: "Kathe Todd-Brown <ktoddbrown@ufl.edu>"
+date: "2023-11-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+## Creating a One Pool Model
+#Create a table with the years in the model
+sim.df <- tibble(year = 1700:2015) %>%
+  #Simulate a change from grassland to cropland in the year 1850 for one grid cell
+  mutate(landuse = case_when(year < 1850 ~'grassland',
+
+                             TRUE ~ 'cropland')) %>%
+  #Set the vegetative carbon input levels for the examples
+  mutate(soil_input = case_when('grassland' == landuse ~ 9,
+                                'cropland' == landuse ~ 5,
+                                TRUE ~ NA),
+         #add the soil calculation column for later as the NA
+         soil = NA)
+
+#Create the soil carbon stock
+soil_inital_stock <- 90
+
+#Match this with the initial input
+soil_inital_input <- 9
+
+#Calculate the turnover year
+soil_turnover_yr <- soil_inital_stock/soil_inital_input
+
+#Or you can set the soil_turnover_yr with a default number
+#soil_turnover_yr <- 15
+
+sim.df <- sim.df %>%
+  #Calculate the soil steady state by multiplying input x turnover
+  mutate(soil_steady_state = soil_input * soil_turnover_yr)
+
+#Review the equations
+#dC/dt = u - C / turnover
+# at steady state
+# 0 = u - C_ss / turnover
+# C_ss = u * turnover
+
+#Set up the initial column value by taking the first soil input and multiplying it by turnover time
+sim.df[1, 'soil'] <- sim.df$soil_input[1] * soil_turnover_yr
+
+#Finish the calculation for the 2 to the end of the dataframe of simulations
+for(ii in 2:nrow(sim.df)){
+  #dC/dt = u - C / turnover
+  #delta_C = delta_t * (soil_input[ii-1] - soil[ii-1] / turnover)
+  
+  #Calculate the change in the time 
+    delta_t <- sim.df$year[ii] - sim.df$year[ii-1]
+  
+  #Calculate the change in soil carbon by multiplying the change in time, vegetative carbon assumptions, and soil carbon, divided by the soil turnover time 
+  delta_C <- delta_t * (sim.df$soil_input[ii-1] - sim.df$soil[ii-1] / soil_turnover_yr)
+  #Calculate the new soil carbon pool by adding the change in carbon to the previous level of soil carbon
+  sim.df$soil[ii] <- sim.df$soil[ii-1] + delta_C
+  #Calculate the new soil steady state target level with the new vegetation and turnover
+  sim.df$soil_steady_state[ii] <- sim.df$soil_input[ii] * soil_turnover_yr
+}
+
+#Plot the carbon stock loss
+ggplot(sim.df) +
+  geom_line(aes(x = year, y = soil)) +
+  geom_line(aes(x=year, y = soil_steady_state), linetype = 2, color = 'lightblue')
+```
+

@@ -1,0 +1,64 @@
+---
+title: "Brazilian Cropland"
+output: html_document
+date: "2024-03-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r cars}
+library(terra)
+library(tidyverse)
+library(tidyterra)
+library(sp)
+library(sf)
+library(raster)
+library(rasterVis)
+library(ggplot2)
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+brazil<-vect("bra_admbnda_adm1_ibge_2020.shp")
+crop2003<-rast("Global_cropland_3km_2003.tif")
+brazil_2003_crop <- crop(crop2003, brazil)
+brazil_2003 <-mask(brazil_2003_crop, brazil)
+
+crop2007<-rast("Global_cropland_3km_2007.tif")
+brazil_2007_crop <- crop(crop2007, brazil)
+brazil_2007 <-mask(brazil_2007_crop, brazil)
+
+crop2011<-rast("Global_cropland_3km_2011.tif")
+brazil_2011_crop <- crop(crop2011, brazil)
+brazil_2011 <-mask(brazil_2011_crop, brazil)
+
+crop2015<-rast("Global_cropland_3km_2015.tif")
+brazil_2015_crop <- crop(crop2015, brazil)
+brazil_2015 <-mask(brazil_2015_crop, brazil)
+
+crop2019<-rast("Global_cropland_3km_2019.tif")
+brazil_2019_crop <- crop(crop2019, brazil)
+brazil_2019 <-mask(brazil_2019_crop, brazil)
+```
+
+
+
+
+```{r}
+Brazil_Stack<-c(brazil_2003, brazil_2007, brazil_2011, brazil_2015, brazil_2019)
+
+names(Brazil_Stack) <- c("2003", "2007", "2011", "2015", "2019")
+
+#https://rdrr.io/cran/terra/man/plet.html
+plet(Brazil_Stack, 1:5, tiles="Streets", share=TRUE, collapse=FALSE) |> lines(brazil, lwd=2)
+
+
+```

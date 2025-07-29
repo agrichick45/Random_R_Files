@@ -1,0 +1,61 @@
+---
+title: "3D Imaging"
+output: html_document
+date: "2024-08-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rgl)
+library(pals)
+```
+
+## Including Plots
+
+```{r}
+setwd("C:/Users/ALIESCH/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters/Historic Land Use")
+
+LandUse<-raster("Reprojected_LandUseRaster_igh.tif")
+
+cls <- data.frame(id=1:8, cover=c("Cropland", "Forest", "Grassland", "Shrubland", "Urban", "Rock/Ice/Desert",  "Tundra", "Pasture"))
+
+levels(LandUse) <- cls
+
+cols <- c("yellow", "darkgreen", "green", "orange", "red", 'grey', 'white', 'lightgreen')
+
+setwd("C:/Users/ALIESCH/OneDrive - Environmental Protection Agency (EPA)/Desktop/AgCensus 2022")
+
+county<-vect("UScounties.shp")
+
+states <- aggregate(county, by='STATE_NAME')
+
+neb <- states %>% filter(STATE_NAME == 'Nebraska')
+
+Neb_igh<-project(neb, LandUse)
+
+Neb_sp <- as(Neb_igh, "Spatial")
+
+Neb_LandUse<-raster::crop(x=LandUse, y=Neb_sp)
+
+Neb_LU_m<-raster::as.matrix(Neb_LandUse)
+
+col = cols[cut(Neb_LU_m, 8)]
+
+
+Pasture_Mask <- raster:::.ifel(Neb_LandUse == 1, 1, 0)
+
+Pasture_LU_m<-raster::as.matrix(Pasture_Mask)
+
+pastCol<-c("white", "lightgreen")
+
+past_col = pastCol[cut(Pasture_LU_m, 2)]
+
+ # Neb_sp$id=as.character(1:nrow(Neb_sp))
+open3d()
+
+surface3d(1:1334, 1:2964, rep(0,length(past_col)), color = past_col, back = "lines", smooth=FALSE)
+surface3d(1:1334, 1:2964, rep(1,length(col)), color = col, back = "lines", smooth=FALSE)
+

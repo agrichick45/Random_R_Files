@@ -1,0 +1,176 @@
+---
+title: "Missouri River Basin Rasters"
+author: "Mandy Liesch"
+date: "8/16/2022"
+output:
+  html_document:
+    toc: true
+    code_folding: hide
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+## Introduction
+
+The objective of this webpage is to visualize and review the underlying raster data that informs the input data calibrated from the Missouri River basin ORISE project on GCAM with the EPA. There are 5 different soil carbon rasters that are utilized in the calculation of land use based emissions for both soil and vegetative carbon. One basin is focused on, as it has the largest percent growth in the United States between 2020 and 2060, with a 5%+ growth in cropland with corresponding losses in unmanaged pasture. The five soil carbon rasters represent estimations in model based soil carbon. 
+
+
+```{r}
+#Load the required packages
+library(sp)
+library(sf)
+library(terra)
+library(tidyverse)
+library(tidyterra)
+library(raster)
+library(rasterVis)
+library(ggplot2)
+library(leaflet)
+library(RColorBrewer)
+library(ncdf4) 
+```
+
+## Materials and Methods
+
+There are several different rasters in this Missouri River Basin Analysis: 
+
+### Soil Carbon Rasters: 30 cm
+
+- GCAM 30 cm estimate:  Original GCAM Estimates:  (recreated with the inital .csv file and the land use in house raster). The ratio of the 30 cm/100 cm HWSD raster was used to multiply with the 100 cm GCAM raster to calculate the approximate level of soil carbon at 30 cm level (for comparison)  
+- FAO Glosis 2018 Raster: From the [FAO Data](https://www.fao.org/soils-portal/data-hub/soil-maps-and-databases/global-soil-organic-carbon-map-gsocmap/en/), and is a fusion of many different sytles, with in country data, filled in with soilgrids 2017 for countries that provided no data.
+- Harmonized World Soils Database: The topsoil (30 cm) raster from the [Regridded Harmonized World Soil Database v1.2](https://daac.ornl.gov/SOILS/guides/HWSD.html). *Find Resolution*    
+- SoilGrids 2017 30 cm raster: Derived with random forest machine learning algorithms [Hengel et al., 2017](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0169748), downloaded the 30 cm soil carbon stocks 250 m resoultion.   
+- SoilGrids 2020 30 cm raster: downloaded using the [WebDav Protocol](https://www.isric.org/explore/soilgrids/soilgrids-access)  
+
+### Vegetation Rasters
+
+- Initial GCAM Vegetation Estimates from the same Houghton Data, with the initial raster used to create the current vegetation estimates
+
+
+### Land Use and Change Rasters
+
+- In House Land Use Raster, based on the European Space Agency (ESA) and Ramunkutty Tundra and Pasture Estimates. 300 m x 300 m resolution.   
+- Historic Land Use from 1700 from [Li et al., 2023](https://essd.copernicus.org/articles/15/1005/2023/)
+- Future Land Use compilation (2060) from [Chen et al,. 2020](https://www.nature.com/articles/s41597-020-00669-x) mean model RCP4.5 SSP2 and the [Land Use Harmonization v2](https://luh.umd.edu/index.shtml) RCP4.5 SSP2 described in [Hurtt et al., 2020](https://gmd.copernicus.org/articles/13/5425/2020/gmd-13-5425-2020-discussion.html) for the pasture and rangeland land use categories. Categories were totaled into the GCAM land use designations and filtered by most prominent. 
+- Cropland Land Use Change from 2000-2019, derived from [WRI](https://glad.umd.edu/dataset/croplands) Data. 3 km resolution, and the value is the % of land converted to cropland in that time period.  
+
+
+```{r, results=FALSE}
+MissouriSV<-vect("missouri_river_basin.shp")
+
+#Load in the In House Categorical Land Use Raster
+Missouri_LUC<-rast("Rasters/Missouri_LUC.tif")
+Missouri_LUC_84<-project(Missouri_LUC, 'EPSG:4326',  method = "near")
+levels(Missouri_LUC_84) <- data.frame(id=c(1,2,3,4, 5, 6, 8), cover=c("Cropland", "Forest", "Grassland",  "Shrubland", "Urban","Rock/Desert", "Pasture"))
+
+Hist_LUC<-rast("Rasters/conus_lulc_1700.tif")
+Hist_LULC<-project(Hist_LUC, 'EPSG:4326',  method = "near")
+Hist_LULC <- ifel(Hist_LULC == 0, 6, Hist_LULC)
+
+Missouri_Hist<-crop(Hist_LULC, MissouriSV)
+Miss_Hist_LULC<-mask(Missouri_Hist, MissouriSV) 
+
+levels(Miss_Hist_LULC)<-data.frame(id=c(4, 5, 6, 7, 8, 9), cover=c("Forest", "Shrubland", "Grassland", "Wetland", "Water", "Rock/Desert"))
+
+Miss_Future<-rast("Rasters/2060_Land_Use.tif")
+Missouri_fut<-crop(Miss_Future, MissouriSV)
+Miss_Fut_LULC<-mask(Missouri_fut, MissouriSV)
+
+levels(Miss_Fut_LULC) <- data.frame(id=c(1,2,3,4, 5, 7), cover=c("Cropland", "Forest", "Grassland",  "Shrubland", "Urban", "Pasture"))
+
+#Load in the WRI Land Use Cropland Change
+Missouri_crop_gain<-rast("Rasters/Missouri_CropGain.tif")
+Missouri_crop_gain_84<-project(Missouri_crop_gain, 'EPSG:4326')
+
+Missouri_crop_loss<-rast("Rasters/Missouri_CropLoss.tif")
+
+#All 30 cm Rasters
+FAO<-rast("Rasters/Missouri_FAO.tif")
+Missouri_FAO<-project(FAO, 'EPSG:4326')
+Missouri_FAO<-classify(Missouri_FAO, cbind(150, Inf, 150))
+
+GCAM<-rast("Rasters/Missouri_GCAM.tif")
+Missouri_GCAM<-project(GCAM, 'EPSG:4326')
+Missouri_GCAM<-ifel(Missouri_GCAM > 97, 150, Missouri_GCAM)
+
+HWSD<-rast("Rasters/Missouri_HWSD.tif")
+Missouri_HWSD<-project(HWSD, 'EPSG:4326')
+Missouri_HWSD<-ifel(Missouri_HWSD > 114, 150, Missouri_HWSD)
+
+SG17<-rast("Rasters/Missouri_SG17.tif")
+Missouri_SG17<-project(SG17, 'EPSG:4326')
+Missouri_SG17<-classify(Missouri_SG17, cbind(150, Inf, 150))
+
+SG20<-rast("Rasters/Missouri_SG20.tif")
+Missouri_SG20<-project(SG20, 'EPSG:4326')
+Missouri_SG20<-classify(Missouri_SG20, cbind(150, Inf, 150))
+
+
+
+
+```
+
+## Results
+
+### Soil Carbon Rasters
+
+#### 
+
+There are five different soil rasters that are important to this study presented. 
+
+```{r}
+SOC30cm_Stack<-c( Missouri_FAO, Missouri_GCAM, Missouri_HWSD, Missouri_SG17, Missouri_SG20) 
+
+names(SOC30cm_Stack) <- c(  "FAO Glosis 30 cm", "GCAM 30 cm", "HWSD 30 cm", "SoilGrids 2017 30 cm", "SoilGrids 2020 30 cm")
+
+#https://rdrr.io/cran/terra/man/plet.html
+plet(SOC30cm_Stack, 1:5, main="Soil Carbon\n Content\n (Mha)", tiles="Streets", share=TRUE, collapse=FALSE) |> lines(MissouriSV, lwd=2)
+
+```
+
+
+
+### Missouri River Land Use
+
+#### Historic 1700 Land Use Raster
+
+
+
+```{r}
+
+plet(Miss_Hist_LULC, main="Land Use\n Category, 1700", col=c( "#075149FF", "#F05C3BFF", "#46732EFF", "#192EC0FF", "#192EC0FF", "#8A9197FF"), tiles="Streets") |> lines(MissouriSV, lwd=2)
+
+```
+
+#### Present (2015) In House Derived Raster 
+
+```{r}
+#https://rdrr.io/cran/terra/man/factors.html
+plet(Missouri_LUC_84, main="Land Use\n Category, 2015", col=c("#FED439FF", "#075149FF", "#46732EFF",  "#F05C3BFF", "#C80813FF", "#8A9197FF", "#FD8CC1FF"), tiles="Streets") |> lines(MissouriSV, lwd=2)
+
+```
+
+#### Future (2060) Composite Derived Raster
+```{r}
+plet(Miss_Fut_LULC, main="Land Use\n Category, 2060", col=c("#FED439FF", "#075149FF", "#46732EFF",  "#F05C3BFF", "#C80813FF", "#FD8CC1FF"), tiles="Streets") |> lines(MissouriSV, lwd=2)
+
+```
+
+
+### Cropland Gains
+
+```{r}
+
+
+plet(Missouri_crop_gain_84, main="Percent\n Cropland\n Added\n 2000-2019", col=map.pal("reds"), tiles="Streets") |> lines(MissouriSV, lwd=2)
+
+```
+
+
+
+
+
+

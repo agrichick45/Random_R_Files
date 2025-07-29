@@ -1,0 +1,66 @@
+---
+title: "OnePoolSimulations"
+author: "Mandy Liesch"
+date: "2023-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library(SoilR)
+```
+
+## Creating the Time Step
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+t_start=0 
+t_end=25 
+t_step=1/12
+t=seq(t_start,t_end,t_step)
+```
+
+
+## Setting the Decay Rate
+```{r}
+t=seq(0,315,by=5)
+k=0.8 # 1/time
+C0=100 # mass
+In = 75 # mass/time
+```
+
+## Create a Custom Carbon Input
+```{r}
+dataInputs=data.frame(time=t,In=rnorm(n=length(t),mean=75,sd=5))
+plot(randomInputs,type="o", xlab="Time (years)", ylab="Carbon inputs (kg/yr)" )
+```
+
+## Put Carbon into the Function
+```{r}
+Model2=OnepModel(t,k,C0,In=randomInputs)
+Ct2=getC(Model2)
+Rt2=getReleaseFlux(Model2)
+```
+
+## Plot the Carbon Loss
+```{}
+par(mfrow=c(2,1),mar=c(5,4,1,1))
+plot(t,Ct2,type="l",col=2,ylab="Carbon stock (kg)", xlab="Time (years)")
+lines(t,Ct1)
+legend("topright",c("Constant inputs","Random inputs"),col=c(1,2),lty=1,bty="n")
+
+plot(t,Rt2,type="l",col=2,ylab="Carbon release (kg/yr)", xlab="Time (years)")
+lines(t,Rt1)
+legend("topright",c("Constant inputs","Random inputs"),col=c(1,2),lty=1,bty="n")
+
+```

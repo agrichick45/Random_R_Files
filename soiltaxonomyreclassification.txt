@@ -1,0 +1,24 @@
+SoilGrids250m 2017-03 - Predicted USDA 2014 suborder classes:
+
+Predicted USDA 2014 suborder classes (as integers) predicted using the global compilation 
+of soil ground observations. Accuracy assessement of the maps is availble in Hengl et at. 
+(2017) DOI: 10.1371/journal.pone.0169748
+
+Original File Location: 
+
+https://files.isric.org/soilgrids/former/2017-03-10/data/
+
+Original File: 
+TAXOUSDA_250m_ll.tif
+
+Original File Key: 
+TAXOUSDA_250m_ll.tif.csv
+
+
+Final Key for Soil Taxonomy
+
+1 = Histosols
+2 = Aquic Soils
+3 = High Organic Matter/Well Drained
+4 = Gelisols
+5 = Gelic Conditions

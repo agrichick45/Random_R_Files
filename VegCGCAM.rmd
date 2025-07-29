@@ -1,0 +1,1217 @@
+---
+title: "GCAM Soil C Assumption Recreation"
+author: "Mandy Liesch"
+date: "4/25/2022"
+output:
+  html_document: 
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Objectives
+
+In order to understand what they underlying soil carbon projections that go into the [Global Change and Analysis Model (GCAM model)](http://jgcri.github.io/gcam-doc/v5.1/overview.html), we first need to look at the underlying assumptions, and their approximate geographic location. When this model was first created, the list of sources in the [GCAM Technical Report](https://www.pnnl.gov/main/publications/external/technical_reports/PNNL-21025.pdf). The type of map we are going to create is referred to as a "Paint by Number" map, as all land use categories in each unique basins are assumed to have the same soil carbon value down to 100 cm. 
+
+Once this map is obtained, it will be compared to the median soil carbon stock values (calculated by land use) from the [SoilGrids 2017](https://www.isric.org/explore/soilgrids/faq-soilgrids) carbon stock. Though this is not the most recent revision of the calculated soil parameters, the 100 cm soil carbon stocks map has not been released yet for the 2020 update, and the comparisons needed to reflect the same depths. 
+
+# Basic Workflow
+
+- Dissolve the shapefile into major basins
+- Merge basin names to the new shapefile
+- Summarize the GCAM core Carbon Document by Land Use, with Basins being separate. 
+- Average together managed and unmanaged land by land type
+- Use the land use raster to create a mask
+- reclassify the raster by land use type
+- mosaic all of the rasters together to create the final map product
+
+
+# Methods
+## Packages
+### Data Manipulation
+tidyverse
+
+### Raster Processing
+terra
+
+### Shapefiles
+sf
+
+```{r}
+library(terra)
+library(tidyverse)
+library(raster)
+library(exactextractr)
+library(sp)
+library(rgdal)
+library(sf)
+library(tidyverse)
+
+```
+
+## Data Sources
+### Data Files
+GCAM_Basin_IDs.csv: This file has the basin names, and GLU, and basin number. 
+
+GCAM 5.0 Core carbon Assumptions: This file has the managed and unmanaged soil carbon assumptions garnered from the land use in the [PNNL Technical Report](https://www.pnnl.gov/main/publications/external/technical_reports/PNNL-21025.pdf). The file has all different land uses, and will need to be manipulated and split by land use type. 
+
+Moirai SoilGrids 2017 Q3 Estimates: This file was used for the new GCAM 6.0 update, and utilizes the soilgrids 2017 Third Quartile values to assume steady state functions.
+
+
+### Raster Files
+Land Use Raster: Created by Sarah Harrison, this is an in home modification of the European Space Agency/MODIS/Ramenkutty Raster. 
+
+Values
+1: Cropland
+2: Forest
+3: Grassland
+4: Shrubland
+5: Urban Land
+6: RID
+7: Tundra
+8: Pasture
+
+
+### Shapefiles
+GCAM Basin Levels: There is an issue with the actual basin value level in the Moirai zip folder, so the region/boundary shapefile was used and dissolved to the Basin level in the igh projection. 
+
+# Results
+
+
+## Dissolve the Shapefile into Major Basins
+
+```{r}
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+#Use the dplyr package and the tidyverse notation to create the polygons to dissolve into. 
+
+Basin.ID <- BasinShapeFile_igh %>% 
+    group_by(basin_id) %>% 
+    summarise() 
+
+#check the basins overall
+
+ggplot(Basin.ID) + geom_sf(aes(fill = 'Basins'))
+```
+
+There are 232 different basins dissolved together. 
+
+## Merge Basin Names to the New Shapefile
+
+```{r}
+
+basinNames<-read_csv("GCAM_Basin_IDs.csv")
+
+basinNames$GLU_code<-NULL
+basinNames$GLU_Name<-NULL
+
+Basin.ID<-merge(basinNames, Basin.ID, by.x='Basin_ID', by.y='basin_id')
+
+head(Basin.ID)
+```
+
+## Summarize the GCAM core Carbon Document by Land Use
+
+```{r}
+carbonC<-read_csv("GCAM 5.0 Core carbon assumptions.csv")
+
+head(carbonC)
+
+#remove the unnecessary columns 
+carbonC$UniqueID<-NULL
+carbonC$`Area ha`<-NULL
+
+#Break the region and basin into two different columns
+carbon<-separate(carbonC, RegionBasinID, c('Region', 'Basin'), sep='_', remove=TRUE)
+
+#Remove the weird NA Columns
+carbon<- carbon %>% drop_na()
+
+head(carbon)
+```
+
+# Land Use Specific Processing
+
+## Cropland
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+croplandC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Crop")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+cropBasinID<-merge(croplandC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(cropBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapCrops<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+cropMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, 1, NA, NA, NA, NA, NA, NA, NA)), filename='cropMask.tif')
+
+plot(cropMask)
+
+cropRaster<-rasterize(mapCrops, cropMask, field="VegC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_crops<- mask(cropRaster, cropMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_crops.tif")
+```
+
+
+
+## Forests
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+forestC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Forest")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+forestBasinID<-merge(forestC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(forestBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapForest<-vect(maps)
+
+forestRaster<-rasterize(mapForest, LandUse, field="VegC", background=NA)
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+forestMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, 1, NA, NA, NA, NA, NA, NA)), filename='forestMask.tif')
+
+plot(forestMask)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_forests<- mask(forestRaster, forestMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_forests.tif")
+```
+
+
+## Shrubland
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+shrublandC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Shrub")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+shrubBasinID<-merge(shrublandC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(shrubBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapShrubland<-vect(maps)
+
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+shrublandMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, 1, NA, NA, NA, NA)), filename='shrubMask.tif')
+
+plot(shrublandMask)
+
+shrubRaster<-rasterize(mapShrubland, LandUse, field="VegC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_shrubland<- mask(shrubRaster, shrublandMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_shrubland.tif")
+```
+
+
+## Grassland
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+grasslandC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Grassland")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+grassBasinID<-merge(grasslandC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(grassBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapGrassland<-vect(maps)
+
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+grasslandMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, 1, NA, NA, NA, NA, NA)), filename='grassMask.tif')
+
+plot(grasslandMask)
+
+grassRaster<-rasterize(mapGrassland, LandUse, field="VegC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_grassland<- mask(grassRaster, grasslandMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_grassland.tif")
+```
+
+
+## Urban Land
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+urbanC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Urban")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+urbanBasinID<-merge(urbanC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(urbanBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapUrban<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+urbanMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, 1, NA, NA, NA)), filename='urbanMask.tif')
+
+plot(urbanMask)
+
+urbanRaster<-rasterize(mapUrban, LandUse, field="VegC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_urban<- mask(urbanRaster, urbanMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_urban.tif")
+```
+
+
+## Rock Ice and Desert
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+RIDC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Rock")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+RIDBasinID<-merge(RIDC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(RIDBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapRID<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+RIDMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, NA, 1, NA, NA)), filename="RID_Mask.tif")
+
+plot(RIDMask)
+
+RIDRaster<-rasterize(mapRID, LandUse, field="VegC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_RID<- mask(RIDRaster, RIDMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_RID.tif")
+```
+
+
+## Tundra
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+tundraC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Tundra")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+tundraBasinID<-merge(tundraC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(tundraBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapTundra<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+tundraMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, NA, NA, 1, NA)), filename="tundra_mask.tif")
+
+plot(tundraMask)
+
+tundraRaster<-rasterize(mapTundra, LandUse, field="VegC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_Tundra<- mask(tundraRaster, tundraMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_tundra.tif")
+```
+
+
+## Pasture
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+pastureC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Pasture")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(VegC), list(VegC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+pastureBasinID<-merge(pastureC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(pastureBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = VegC))
+
+#convert to the raster
+mapPasture<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+pastureMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, NA, NA, NA, 1)), filename="pasture_mask.tif")
+
+plot(pastureMask)
+
+pastureRaster<-rasterize(mapPasture, LandUse, field="VegC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+VC_GCAM_Pasture<- mask(pastureRaster, pastureMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "VC_GCAM_pasture.tif")
+```
+
+
+## Assemble the Mosiac Raster
+
+
+###Mosiac the Rasters Together in Pairs
+```{r}
+#NOTE, I had to change the temp directory in the TerraOptions to something on the desktop, and purge after every result
+
+terraOptions(tempdir="C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/processing")
+
+grassTiff<-rast("VC_GCAM_grassland.tif")
+pastTiff<-rast("VC_GCAM_pasture.tif")
+
+mosaic1<-mosaic(pastTiff, grassTiff, fun="mean", filename="VCmosaic1.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+tundraTiff<-rast("VC_GCAM_tundra.tif")
+urbanTiff<-rast("VC_GCAM_urban.tif")
+
+mosaic2<-mosaic(tundraTiff, urbanTiff, fun="mean", filename="VCmosaic2.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+
+forestTiff<-rast("VC_GCAM_forests.tif")
+shrubTiff<-rast("VC_GCAM_shrubland.tif")
+
+mosaic3<-mosaic(forestTiff, shrubTiff, fun="mean", filename="VCmosaic3.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+cropTiff<-rast("VC_GCAM_crops.tif")
+RIDTiff<-rast("VC_GCAM_RID.tif")
+
+
+mosaic4<-mosaic(cropTiff, RIDTiff, fun='mean', filename="VCmosaic4.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+```
+
+### Compile the Resulting Pairs Again
+
+```{r}
+mosaic1<-rast("VCmosaic1.tif")
+mosaic2<-rast("VCmosaic2.tif")
+
+semiMosaic1<-mosaic(mosaic1, mosaic2, fun='mean', filename="VCsemimosaic1.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+
+
+mosaic3<-rast("VCmosaic3.tif")
+mosaic4<-rast("VCmosaic4.tif")
+
+semiMosaic2<-mosaic(mosaic3, mosaic4, fun='mean', filename="VCsemimosaic2.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+```
+
+### Compile the Final Pairing
+
+```{r}
+semiMosaic1<-rast("VCsemimosaic1.tif")
+semiMosaic2<-rast("VCsemimosaic2.tif")
+
+GCAM_VC_Est<-mosaic(semiMosaic1, semiMosaic2, fun='mean', filename="GCAM_VC_Raster.tif", overwrite=TRUE, wopt=list())
+```
+
+
+
+## Moirai Q3 Recreation
+## Summarize the GCAM core Carbon Document by Land Use
+
+
+```{r}
+
+basinNames<-read_csv("GCAM_Basin_IDs.csv")
+
+
+basinNames$GLU_Name<-NULL
+
+MCC<-read_csv("moirai_Q3_SG2017.csv")
+
+head(MCC)
+
+#Merge with the Basin Names file by GLU
+carbonMoirai<-merge(basinNames, MCC, by.x= 'GLU_code', by.y='GLU')
+
+MC<- merge(Basin.ID, carbonMoirai, by.x='Basin_ID', by.y='Basin_ID')
+MC$GCAM_Basin_Name.x<-NULL
+MC$`mature age`<-NULL
+
+```
+
+## Cropland 
+
+```{r}
+
+croplandC<- MC %>% 
+  filter(str_detect(MC$Land_Type, "Crop")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+cropBasinID<-merge(croplandC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(cropBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapCrops<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+cropMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, 1, NA, NA, NA, NA, NA, NA, NA)), filename='cropMask.tif')
+
+plot(cropMask)
+
+cropRaster<-rasterize(mapCrops, cropMask, field="soil_c", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_moirai_crops<- mask(cropRaster, cropMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_crops.tif")
+```
+
+
+
+## Forests
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+forestC<- MC %>% 
+  filter(str_detect(MC$Land_Type, "Forest")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+forestBasinID<-merge(forestC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(forestBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapForest<-vect(maps)
+
+forestRaster<-rasterize(mapForest, LandUse, field="soil_c", background=NA)
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+forestMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, 1, NA, NA, NA, NA, NA, NA)), filename='forestMask.tif')
+
+plot(forestMask)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_moirai_forests<- mask(forestRaster, forestMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_forests.tif")
+```
+
+
+## Shrubland
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+shrublandC<- MC %>% 
+  filter(str_detect(MC$Land_Type, "Shrub")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+shrubBasinID<-merge(shrublandC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(shrubBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapShrubland<-vect(maps)
+
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+shrublandMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, 1, NA, NA, NA, NA)), filename='shrubMask.tif')
+
+plot(shrublandMask)
+
+shrubRaster<-rasterize(mapShrubland, LandUse, field="soil_c", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_moirai_shrubland<- mask(shrubRaster, shrublandMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_shrubland.tif")
+```
+
+
+
+
+## Grassland
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+grasslandC<- MC %>% 
+  filter(str_detect(MC$Land_Type, "Grassland")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+grassBasinID<-merge(grasslandC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(grassBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapGrassland<-vect(maps)
+
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+grasslandMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, 1, NA, NA, NA, NA, NA)), filename='grassMask.tif')
+
+plot(grasslandMask)
+
+grassRaster<-rasterize(mapGrassland, LandUse, field="soil_c", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC__moirai_grassland<- mask(grassRaster, grasslandMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_grassland.tif")
+```
+
+
+## Urban Land
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+urbanC<- MC %>%
+  filter(str_detect(MC$Land_Type, "Urban")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+urbanBasinID<-merge(urbanC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(urbanBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapUrban<-vect(maps)
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+urbanMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, 1, NA, NA, NA)), filename='urbanMask.tif')
+
+plot(urbanMask)
+
+urbanRaster<-rasterize(mapUrban, LandUse, field="soil_c", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_moirai_urban<- mask(urbanRaster, urbanMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_urban.tif")
+```
+
+
+## Rock Ice and Desert
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+RIDC<- MC %>% 
+  filter(str_detect(MC$Land_Type, "Rock")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+RIDBasinID<-merge(RIDC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(RIDBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapRID<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+RIDMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, NA, 1, NA, NA)), filename="RID_Mask.tif")
+
+plot(RIDMask)
+
+RIDRaster<-rasterize(mapRID, LandUse, field="soil_c", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_moirai_RID<- mask(RIDRaster, RIDMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_RID.tif")
+```
+
+
+## Tundra
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+tundraC<- MC %>% 
+  filter(str_detect(MC$Land_Type, "Tundra")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+tundraBasinID<-merge(tundraC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(tundraBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapTundra<-vect(maps)
+
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+tundraMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, NA, NA, 1, NA)), filename="tundra_mask.tif")
+
+plot(tundraMask)
+
+tundraRaster<-rasterize(mapTundra, LandUse, field="soil_c", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_moirai_Tundra<- mask(tundraRaster, tundraMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_tundra.tif")
+```
+
+
+## Pasture
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+pastureC<- MC %>% 
+  filter(str_detect(MC$Land_Type, "Pasture")) %>%
+  group_by(Basin_ID) %>%  
+  summarise_at(vars(soil_c), list(soil_c = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+pastureBasinID<-merge(pastureC, Basin.ID, by.x='Basin_ID', by.y='Basin_ID')
+
+maps<-st_as_sf(pastureBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soil_c))
+
+#convert to the raster
+mapPasture<-vect(maps)
+LandUse<-rast("Reprojected_LandUseRaster_igh.tif")
+
+
+
+```
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+
+pastureMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                      v=c(NA, NA, NA, NA, NA, NA, NA, NA, 1)), filename="pasture_mask.tif")
+
+plot(pastureMask)
+
+pastureRaster<-rasterize(mapPasture, LandUse, field="soil_c", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_moirai_Pasture<- mask(pastureRaster, pastureMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SC_moirai_pasture.tif")
+```
+
+
+
+###Mosiac the Rasters Together in Pairs
+```{r}
+#NOTE, I had to change the temp directory in the TerraOptions to something on the desktop, and purge after every result
+
+
+grassTiff<-rast("SC_moirai_grassland.tif")
+pastTiff<-rast("SC_moirai_pasture.tif")
+
+mosaic1<-mosaic(pastTiff, grassTiff, fun="mean", filename="SCMmosaic1.tif", overwrite=TRUE, wopt=list())
+
+
+tundraTiff<-rast("SC_moirai_Tundra.tif")
+urbanTiff<-rast("SC_moirai_urban.tif")
+
+mosaic2<-mosaic(tundraTiff, urbanTiff, fun="mean", filename="SCMmosaic2.tif", overwrite=TRUE, wopt=list())
+
+
+forestTiff<-rast("SC_moirai_forests.tif")
+shrubTiff<-rast("SC_moirai_shrubland.tif")
+
+mosaic3<-mosaic(forestTiff, shrubTiff, fun="mean", filename="SCMmosaic3.tif", overwrite=TRUE, wopt=list())
+
+
+cropTiff<-rast("SC_moirai_crops.tif")
+RIDTiff<-rast("SC_moirai_RID.tif")
+
+
+mosaic4<-mosaic(cropTiff, RIDTiff, fun='mean', filename="SCMmosaic4.tif", overwrite=TRUE, wopt=list())
+
+
+
+```
+
+```{r}
+
+semiMosaic1<-mosaic(mosaic1, mosaic2, fun='mean', filename="SCMsemimosaic1.tif", overwrite=TRUE, wopt=list())
+
+semiMosaic2<-mosaic(mosaic3, mosaic4, fun='mean', filename="SCMsemimosaic2.tif", overwrite=TRUE, wopt=list())
+```
+
+
+```{r}
+
+Moirai_SC_SG2017_Est<-mosaic(semiMosaic1, semiMosaic2, fun='mean', filename="Moirai_Q3_Raster.tif", overwrite=TRUE, wopt=list())

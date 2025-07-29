@@ -1,0 +1,29 @@
+---
+title: "Crop_Stacks"
+output: html_document
+date: "2023-09-12"
+---
+
+```{r setup, include=FALSE}
+#This dataset returns to the delimNA, and pulls out the LandUse base data of the crop types in each basin.
+
+#filter to reference scenario
+LUERef<-filter(delimNA, scenario == "REF" & Type == 'LandUse', Management != 'Total')
+
+LUERefTotal<-filter(delimNA, scenario == "REF" & Type == 'LandUse', Management == 'Total')
+
+#Remove extra columns
+subsetLUERef <- subset(LUERef, select = -c(Type, LandUse)) 
+
+#Merge the basin names with GLU Code
+RefLUESet <- merge(GCAM_Basin_IDs, subsetLUERef, by.x= "GLU_Name", by.y='riverBasin', all=TRUE)
+
+RefLUESet<-na.omit(RefLUESet)
+
+#Convert from wide to long
+RefSetLUELong <-gather(RefLUESet, year, Mha, '2010':'2060')
+
+#Remove the excess columns 
+FinalLUERef <- subset(RefSetLUELong, select = c( GLU_code, GCAM_Basin_Name, GLU_Name, Basin_ID, region, Management, year, Mha) )
+
+```

@@ -1,0 +1,406 @@
+---
+title: "GCAM Comparison"
+author: "Mandy Liesch"
+date: "5/10/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(terra)
+library(tidyverse)
+library(raster)
+library(exactextractr)
+library(sp)
+library(rgdal)
+library(sf)
+library(tidyverse)
+
+```
+## GCAM Comparison vs Soil Grid 2017
+
+
+```{r}
+#Read in the GCAM Data
+GCAM_SOC<-rast("GCAM_SOC_Raster1.tif")
+
+plot(GCAM_SOC)
+
+#Read in the 2017 Soil Carbon Data
+SoilGrids_2017_100cm<-rast("OCSTHA_M_100cm_250m_ll.tif")
+
+#Reproject into uniform raster format
+terra::project(SoilGrids_2017_100cm, GCAM_SOC, method= "near", filename= "Reproj_2017_SOC_100cm.tif", overwrite=TRUE) 
+
+SoilGrids_SOC<-rast("Reproj_2017_SOC_100cm.tif")
+
+plot(SoilGrids_SOC)
+```
+
+## Differences
+
+```{r}
+difSOC<-SoilGrids_SOC - GCAM_SOC
+
+
+cuts=c(-100,0,50,100,150,200,250,500) #set breaks
+pal <- colorRampPalette(c("yellow","red"))
+
+plot(difSOC, breaks=cuts, col = pal(7)) #plot with defined breaks
+
+plot(Basin.ID, col=NA, add = TRUE)
+
+plot(difSOC)
+
+
+```
+
+
+## Start Masking
+
+You can also embed plots, for example:
+
+```{r}
+#Set up the temporary File for processing
+terraOptions(tempdir="C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/processing")
+
+#read in raster masks
+cropMask<-rast("cropMask.tif")
+
+SOC2017_crops<- mask(SoilGrids_SOC, cropMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_crops.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+
+
+forestMask<-rast("forestMask.tif")
+SOC2017_forests<- mask(SoilGrids_SOC, forestMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_forest.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+
+grassMask<-rast("grassMask.tif")
+SOC2017_grass<- mask(SoilGrids_SOC, grassMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_grass.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+pastureMask<-rast("pasture_mask.tif")
+SOC2017_pasture<- mask(SoilGrids_SOC, pastureMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_pasture.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+RIDMask<-rast("RID_Mask.tif")
+SOC2017_RID<- mask(SoilGrids_SOC, RIDMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_RID.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+shrubMask<-rast("shrubMask.tif")
+SOC2017_shrub<- mask(SoilGrids_SOC, shrubMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_shrub.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+tundraMask<-rast("tundra_mask.tif")
+SOC2017_tundra<- mask(SoilGrids_SOC, tundraMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_tundra.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+urbanMask<-rast("urbanMask.tif")
+SOC2017_urban<- mask(SoilGrids_SOC, urbanMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_urban.tif")
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+
+```
+
+# Read in Basin Shapefiles
+```{r}
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+#Use the dplyr package and the tidyverse notation to create the polygons to dissolve into. 
+
+Basin.ID <- BasinShapeFile_igh %>% 
+    group_by(basin_id) %>% 
+    summarise() 
+
+#check the basins overall
+
+ggplot(Basin.ID) + geom_sf(aes(fill = 'Basins'))
+
+```
+
+#Use ExactExtract to calculate the median and Q3
+```{r}
+
+
+
+SOC2017_crops<-rast("SOC2017_crops.tif")
+
+Basin.ID$cropMedian<- exact_extract(SOC2017_crops, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = cropMedian))
+
+mapCrops<-vect(Basin.ID)
+
+cropMask<-rast("cropMask.tif")
+
+
+cropRaster<-rasterize(mapCrops, cropMask, field="cropMedian", background=NA)
+
+SOC_2017_crops<- mask(cropRaster, cropMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_crops_median.tif", overwrite=TRUE)
+
+
+```
+
+
+```{r}
+
+SOC2017_forest<-rast("SOC2017_forest.tif")
+
+Basin.ID$forestMedian<- exact_extract(SOC2017_forest, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = forestMedian))
+
+mapForest<-vect(Basin.ID)
+
+forestMask<-rast("forestMask.tif")
+
+
+forestRaster<-rasterize(mapForest, forestMask, field="forestMedian", background=NA)
+
+SOC_2017_forest<- mask(forestRaster, forestMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_forest_median.tif", overwrite=TRUE)
+```
+
+
+```{r}
+SOC2017_grass<-rast("SOC2017_grass.tif")
+
+Basin.ID$grassMedian<- exact_extract(SOC2017_grass, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = grassMedian))
+
+mapGrass<-vect(Basin.ID)
+
+grassMask<-rast("grassMask.tif")
+
+
+grassRaster<-rasterize(mapGrass, grassMask, field="grassMedian", background=NA)
+
+SOC_2017_grass<- mask(grassRaster, grassMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_grass_median.tif", overwrite=TRUE)
+
+
+```
+
+```{r}
+SOC2017_pasture<-rast("SOC2017_pasture.tif")
+
+Basin.ID$pastureMedian<- exact_extract(SOC2017_pasture, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = pastureMedian))
+
+mapPasture<-vect(Basin.ID)
+
+pastureMask<-rast("pasture_mask.tif")
+
+
+pastureRaster<-rasterize(mapPasture, pastureMask, field="pastureMedian", background=NA)
+
+SOC_2017_pasture<- mask(pastureRaster, pastureMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_pasture_median.tif", overwrite=TRUE)
+```
+
+```{r}
+SOC2017_RID<-rast("SOC2017_RID.tif")
+
+Basin.ID$RIDMedian<- exact_extract(SOC2017_RID, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = RIDMedian))
+
+mapRID<-vect(Basin.ID)
+
+RIDMask<-rast("RID_Mask.tif")
+
+
+RIDRaster<-rasterize(mapRID, RIDMask, field="RIDMedian", background=NA)
+
+SOC_2017_RID<- mask(RIDRaster, RIDMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_RID_median.tif", overwrite=TRUE)
+```
+
+```{r}
+SOC2017_Shrub<-rast("SOC2017_shrub.tif")
+
+Basin.ID$shrubMedian<- exact_extract(SOC2017_Shrub, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = shrubMedian))
+
+mapShrub<-vect(Basin.ID)
+
+shrubMask<-rast("shrubMask.tif")
+
+
+shrubRaster<-rasterize(mapShrub, shrubMask, field="shrubMedian", background=NA)
+
+SOC_2017_shrub<- mask(shrubRaster, shrubMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_shrub_median.tif", overwrite=TRUE)
+```
+
+
+```{r}
+SOC2017_Tundra<-rast("SOC2017_tundra.tif")
+
+Basin.ID$tundraMedian<- exact_extract(SOC2017_Tundra, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = tundraMedian))
+
+mapTundra<-vect(Basin.ID)
+
+tundraMask<-rast("tundra_mask.tif")
+
+
+tundraRaster<-rasterize(mapTundra, tundraMask, field="tundraMedian", background=NA)
+
+SOC_2017_tundra<- mask(tundraRaster, tundraMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_tundra_median.tif", overwrite=TRUE)
+```
+
+```{r}
+SOC2017_Urban<-rast("SOC2017_urban.tif")
+
+Basin.ID$urbanMedian<- exact_extract(SOC2017_Urban, Basin.ID, fun='quantile', quantiles= 0.5)
+
+
+ggplot(Basin.ID) + geom_sf(aes(fill = urbanMedian))
+
+mapUrban<-vect(Basin.ID)
+
+urbanMask<-rast("urbanMask.tif")
+
+
+urbanRaster<-rasterize(mapUrban, urbanMask, field="urbanMedian", background=NA)
+
+SOC_2017_urban<- mask(urbanRaster, urbanMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SOC2017_urban_median.tif", overwrite=TRUE)
+```
+
+
+#Create a Polygon from the Median Value
+
+#Rasterize Polygon
+
+#Assemble the final Rasters
+
+
+
+# Merge all Files, Phase 1
+
+```{r}
+
+grassTiff<-rast("SOC2017_grass_median.tif")
+pastTiff<-rast("SOC2017_pasture_median.tif")
+
+mosaic1<-mosaic(pastTiff, grassTiff, fun="mean", filename="mosaic1.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+tundraTiff<-rast("SOC2017_tundra_median.tif")
+urbanTiff<-rast("SOC2017_urban_median.tif")
+
+mosaic2<-mosaic(tundraTiff, urbanTiff, fun="mean", filename="mosaic2.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+
+forestTiff<-rast("SOC2017_forest_median.tif")
+shrubTiff<-rast("SOC2017_shrub_median.tif")
+
+mosaic3<-mosaic(forestTiff, shrubTiff, fun="mean", filename="mosaic3.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+cropTiff<-rast("SOC2017_crops_median.tif")
+RIDTiff<-rast("SOC2017_RID_median.tif")
+
+
+mosaic4<-mosaic(cropTiff, RIDTiff, fun='mean', filename="mosaic4.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+```
+
+# Mosaic Files - Part 2
+
+```{r}
+
+mosaic1<-rast("mosaic1.tif")
+mosaic2<-rast("mosaic2.tif")
+
+semiMosaic1<-mosaic(mosaic1, mosaic2, fun='mean', filename="semimosaic1.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+
+
+
+mosaic3<-rast("mosaic3.tif")
+mosaic4<-rast("mosaic4.tif")
+
+semiMosaic2<-mosaic(mosaic3, mosaic4, fun='mean', filename="semimosaic2.tif", overwrite=TRUE, wopt=list())
+
+tmpFiles(current=TRUE, remove=TRUE)
+```
+
+### Compile the Final Pairing
+
+```{r}
+semiMosaic1<-rast("semimosaic1.tif")
+semiMosaic2<-rast("semimosaic2.tif")
+
+SoilGrids2017_Est<-mosaic(semiMosaic1, semiMosaic2, fun='mean', filename="SoilGrids2017_100cm_LU_Raster.tif", overwrite=TRUE, wopt=list())
+```
+
+
+#Comparisons
+```{r}
+GCAM<-rast("GCAM_SOC_Raster1.tif")
+FAO<-rast("FAO_GSOCmap1.5.0.tif")
+SoilGrids2017<-rast("SoilGrids2017_100cm_LU_Raster.tif")
+
+
+terra::project(FAO, GCAM, method= "near", filename= "Reproject_FAO_100cm.tif")
+
+FAO_Repro<-rast("Reproject_FAO_100cm.tif")
+
+dif2SOC<-FAO_Repro-GCAM_SOC
+
+cuts=c(-300,0,50,100,150,200,250,500) #set breaks
+
+plot(dif2SOC, breaks=cuts, col = pal(7)) #plot with defined breaks
+ 
+plot(Basin.ID, col=NA, add = TRUE)

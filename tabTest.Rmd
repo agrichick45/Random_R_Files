@@ -1,0 +1,2450 @@
+---
+title: "Peatlands Project"
+author: "Mandy Liesch"
+
+output: 
+  html_document:
+    toc: TRUE
+    number_sections: TRUE
+    toc_float: TRUE
+    theme: cerulean
+    code_folding: hide
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, results = FALSE)
+```
+
+
+# Overall Workflow 
+## Required Packages
+```{r}
+#Load the required packages in R
+library(terra)
+library(ggalt)
+library(tidyverse)
+library(kableExtra)
+library(sp)
+library(sf)
+library(ggpubr)
+library(ggplot2)
+```
+
+There are several packages that are used in the preprocessing documentation that are not included in this document, which is focused mostly on visualization parameters. 
+
+
+Packages include:  
+`ggalt` -  Version 0.4.0  
+`ggplot2` -  Version 3.3.5  
+`ggpubr` -  Version 0.4.0  
+`kableExtra` - Version 1.3.4  
+`sf` -  Version 1.0-5  
+`sp` -  Version 1.4-6  
+`terra` - Version 1.4-22  
+`tidyverse` - Version 1.3.1  
+
+
+## Preprocessing Script
+Running the preprocessing script gets the correct files into the workflow, while removing the unnecessary files from the memory. 
+
+## Input Files: 
+- [Xu et al., 2017 Tropical Peatland Shapefiles](https://www.sciencedirect.com/science/article/abs/pii/S0341816217303004?via%3Dihub) (converted to a .tif raster in ArcPro version 2.3)
+- [SoilGrids 2020](https://soilgrids.org/) Soil Organic Carbon Stock 0-30 cm
+- GCAM Region Basin Shapefile 
+- peatOutput.csv file (derived from the pre-processing script file)
+- peatFAOSoilsDB.csv file (derived from the pre-processing script file, FAO version)
+
+
+## Preprocessing Workflow
+- Creates Raster Maps in the correct projection
+- Generates the maps of mineral and organic soils
+- Creates a peatland csv file using the ExactExtract() function
+- Merges the peatland csv file to the GCAM Boundary Shapefile
+- Remove all extra basins
+
+```{r}
+#Preprocessing Steps: 
+
+#Set the working directory to the map boundary location
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"))
+
+#Save a new basin output with the new projection
+peatOutput<-BasinShapeFile_igh
+
+#Read in the peatOutput.csv derived from the pre-processing file
+peatSoils<-read_csv("peatOutput.csv")
+
+#remove the duplicate columns that the map boundary files and peat Output has in common, basin names, region names, basin id, and region id
+
+#***Special Note: If you use the pre-processing file code directly, this step can be omitted, as these values are saved directly to the shapefile. However, this shortcut is designed to save the processing and heavy programming lifting***. 
+
+peatSoils$basin_nm<-NULL
+peatSoils$reg_nm<-NULL
+peatSoils$basin_id<-NULL
+peatSoils$reg_id<-NULL
+
+#Merge the projected shapefile with the peat information by basin
+mapFile<-merge(peatOutput, peatSoils, by='key')
+
+#Calculate the percentage of peatland in each region basin
+mapFile$PerPeat<-as.numeric(mapFile$PerPeat)
+
+
+```
+
+## Visualization Workflow
+- Calculate the Percent Peatland Derived from the paper
+- Visualize the peatland and low, medium, and high percentage peatland
+- Create maps to visualize peatland and mineral soil medians
+- Use a scatter plot to determine the difference between mineral and peat soils
+- Create a boxplot with overall global summaries
+- Plot dumbbell plots of the basins with the highest percentage of soil peatland
+
+# Results
+
+### Peatland Results {.tabset .tabset-fade .tabset-pills}
+
+A note about the Tropical Peatlands Raster: The [Xu et al., 2017](https://www.sciencedirect.com/science/article/abs/pii/S0341816217303004?via%3Dihub) paper created a repository of global peatlands stored at the [Leeds Repository](https://archive.researchdata.leeds.ac.uk/251/). There is a detailed [source review](https://archive.researchdata.leeds.ac.uk/251/2/PEATMAP_data_sources.pdf) for all global areas. This review centers only on those prone to land use change. This raster was patched together using ArcPro 2.3
+
+```{r}
+
+#Map File Preparation: 
+
+#Remove all of the region basins that do not have peatland
+mapFile<- mapFile %>%
+  filter(!is.na(PerPeat))
+
+#Trim Out All Basins in the GCAM Regions that are not used for the Tropical Peatlands
+mapFile2 = filter(mapFile, !(reg_nm %in%  c("Argentina", "Australia_NZ", "Canada", "Central Asia", "EU-12", "EU-15", "Europe_Eastern", "Europe_Non_EU", "Mexico", "European Free Trade Association", "Russia", "South Africa", "USA", "Japan" )))
+
+#Some of the Regions were necessary, but the basins in them are not, so this file trims off the excess basins.
+mapFile3 = filter(mapFile2, !(basin_nm %in% c("South_Chile_Pacific_Coast", "North_Chile_Pacific_Coast", "South_Argentina_South_Atlantic_Coast", "Russia_South_East_Coast", "Gobi_Interior", "Ob", "Amur", "Bo_Hai_Korean_Bay_North_Coast", "Amu_Darya", "Lake_Balkash", "Syr_Darya")))
+
+#When we do transformations with dplyr, the geometry file transfers to a standard column, and the fix is to convert back to a shapefile
+maps<-st_as_sf(mapFile3)
+
+#Remove all of the NA basins
+maps2<- maps %>% na.omit
+
+
+#Create the files needed for a Categorical Map
+
+
+#Add the Classification groups and their labels  
+mapFile4 <- mapFile3 %>% 
+  #Use the mutate function to create a new column
+  #Cut splits the Percent peat by the breaks defined
+  mutate(category=cut(PerPeat, breaks=c(0,1.5,5,20),
+  #Add the column values for each breaks.
+  labels=c("low < 1.5%","middle","high: > 5%")))
+
+#As above, after using dplyr, files need to be translated back to a shapefile.
+maps1<-st_as_sf(mapFile4)
+```
+
+```{r}
+#Create the Maps for the Tropical Peatland and Category
+
+#Tropical Peatland Map
+#Add the Percentage Tropical Peatland
+perPeat<-ggplot(maps)+ 
+  #use the mapping geom_sf, set the column to use for fill (percent peat)
+  geom_sf(aes(fill=PerPeat)) +
+  #Add a title to the plot
+  labs(title = "Tropical Percent Peat Area")
+
+#Create the Category Map
+#Use the category map
+category<-ggplot(maps1)+ 
+  #Use the category filling to fill the map
+  geom_sf(aes(fill=category))+
+  #Add a title
+  labs(title = "Group Classification of Peat Area")
+
+#Arrange Both Plots Together
+
+ggarrange(
+  #Select the maps in the order desired
+  perPeat, category, 
+  #Add the map labels
+  labels = c("A", "B"),
+  #Set the number of columns and rows
+  ncol = 1, nrow = 2, 
+  #Align the axes of the plots on the x axis.
+  align = "v")
+
+```
+
+There are 12 tropical and subtropical basins that have what I would consider to be a substantial amount of peatland (> 5%). These basins are located in Indonesia, Southeast Asia, and South America. These basins are detailed and summerized below. 
+
+
+
+### Soil Map Results {.tabset .tabset-fade .tabset-pills}
+
+#### SoilGrids 2020 Results {.active .tabset .tabset-fade .tabset-pills}
+
+The SoilGrids 2020 Soil Organic Carbon Stock in tC/ha is located below. The data was mapped, then trimmed to GCAM region basins, unlike the table above, these results are tailored to the median. 
+
+```{r}
+#On my computer, I have to switch the directory to display the raster
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+#Use the terra package to import the raster
+soilC<-rast("GlobalCarbonSoilRaster_SoilGrid_2021.04.12.tif")
+
+#Plot the overall soil carbon raster
+plot(soilC)
+
+```
+
+```{r, results=TRUE}
+#Create the tropical Peatland Table for Top Basins (percentage and Area)
+
+#Results must be TRUE to show the text variables and tables
+
+#Find the top peat percentage basins
+peatTable<- mapFile4 %>%
+  arrange(desc(PerPeat))
+
+#strip off the geometry (shapefile) to create a table
+peatTable$geometry<-NULL
+  
+#Create a new table 
+selTable<-peatTable %>%
+  #Get the variables we want to summerize
+  dplyr::select(basin_nm, reg_nm, PerPeat, TotmeanC, MineralMean, PeatMean)
+
+#Grab only the top 12 basins
+table<-head(selTable, 12)
+
+#Format the table using the kable extra package
+table %>%
+  #Create the table label
+  kbl(caption = "Top Peat Percentage Basins", 
+      #Set the number of Significant Digits
+      digits= 1, 
+      #Specify the column names
+      col.names = c("Basin Name", "Region Name",
+                           "Percent Peat",
+                           "Total Mean Soil Carbon",
+                           "Mean Mineral Carbon",
+                           "Mean Peat Carbon")) %>%
+  #Add the striped kable styling option
+  kable_styling(bootstrap_options = "striped")
+  
+
+```
+This is a subset of results on the SoilGrids Carbon Stocks from 2020. Click on each of these tabs to explore different summaries and visualizations of the data. 
+
+- Scatter Plots: Look at the relationships between the median mineral soil carbon and peatland soil carbon values. HINT, with this data, having a more linear the relationship (the closer to the 1:1 line on the chart), is not necessarily a great thing.
+
+- Box Plots: This aggregates ALL watersheds, and presents the median, interquartile range, and 5%-95% range.
+
+- Maps : Look at the different data quartiles of each of the basins that have peatland whatsoever. Each different map has a different color scale, but the color scales between the two maps on each tab are the same. The code dropdown on the map tab describes the basic elements needed for visualization.
+
+- Dumbbell Plots: In the 12 basins with 5% or more peatland, the dumbbell plots show 
+
+|           - the entire range
+|           - the 5-95% ratio is the colored bar
+|           - the vertical blue lines are the first to third quartile
+|           - the red dot is the median
+
+##### Maps {.tabset .tabset-fade .tabset-pills}
+
+Select the tabs below to get the maps representing the total carbon for both peat and mineral soils at different intervals. Each tab has the same color scheme, but they are not comparative between the tabs. 
+
+```{r}
+#These are the functions that are used to created the stacked mineral soil and soil organic carbon mapping files. The overall code approach is as follows, and is documented under the Fifth Percentile tab
+
+# Create the mineral map at each percentile
+# Create the peat map at each percentile
+# Set the gradient of the fill using the minimum value of the mineral soil, and the maximum of the peat variable
+# Change the color gradient to the reverse terrain colors
+# Use ggarrange to stack the peat raster on top of the mineral raster
+# Label each map
+# Set it for one column and two rows
+# Use the vertical alignment to match the data scales
+
+```
+
+###### Fifth Percentile
+
+Mineral soils in this region are greatest in Southeast Asia as well as the Northern Amazon. Peatland soil carbon in East Africa, China, and New Guinea are higher than other regions.
+
+```{r}
+#Mapping Visualizations Procedure
+
+#Create a mineral soil map at the 5th percentile, using ggplot
+minQ5<-ggplot(maps2)+ 
+    #Set which variable to visualize (in this case, Mineral, 5th percentile)
+    geom_sf(aes(fill=MineralQ5)) +
+    #Use the scale fill gradientn to create custom color palette for both maps
+    scale_fill_gradientn(
+    #the limits function sets the scales
+    limits = c(
+    #the minimum value is the minimum of the carbon mineral values
+    min(maps2$MineralQ5),  
+    #the maximum value is the maximum of the carbon in peatland
+    max(maps2$PeatQ5)), 
+    #Set the color scale as reverse terrain colors (low =white, green = high)
+    colours = rev(terrain.colors(10)))
+
+#Repeat for peatland
+peatQ5<-ggplot(maps2)+ 
+    #Using peatland fill
+    geom_sf(aes(fill=PeatQ5)) +
+    #The scale for this map is identical to the previous
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ5),  max(maps2$PeatQ5)), 
+    #The color scale also matches above
+    colours = rev(terrain.colors(10)))
+
+#Stack the two maps together using ggarrange
+ggarrange(
+    #Set the two maps in order
+    peatQ5, minQ5, 
+    #Create the Labels for both maps
+    labels = c("Peat 5th Percentile", "Mineral 5th Percentile"),
+    #Set the total number of columns and rows      
+    ncol = 1, nrow = 2, 
+    #Align the vertical axis (by longitude)
+    align = "v")
+
+```
+
+###### First Quartile (25th Percentile)
+
+The mineral soils in Columbia and Southeast Asia are higher than many of the other regions, and many of the regions of Africa have lower. Peatland soil carbon is still high in China, East Africa, and New Guinea. 
+
+```{r}
+#Detailed code description under 5th percentile
+peatQ1<-ggplot(maps2)+ 
+    geom_sf(aes(fill=MineralQ1)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ1),  max(maps2$PeatQ1)), colours = rev(terrain.colors(10)))
+
+minQ1<-ggplot(maps2)+ 
+    geom_sf(aes(fill=PeatQ1)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ1),  max(maps2$PeatQ1)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ1, minQ1, 
+          labels = c("Peat 25th Percentile", "Mineral 25th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Median
+
+Mineral soils seem to be at about the same rate as the lower percentiles. With Indonesia being added to Columbia and Southeat Asia. Like before, peatland soil carbon is still high in China, East Africa, and New Guinea. However, Southern Brazil has a huge jump to the median value.
+
+```{r}
+
+#Detailed description under 5th percentile
+mineralMed<-ggplot(maps2)+ 
+    geom_sf(aes(fill=Mineralmedian)) +
+    scale_fill_gradientn(limits = c(min(maps2$Mineralmedian),  max(maps2$PeatMedian)), colours = rev(terrain.colors(10)))
+
+peatMed<-ggplot(maps2)+ 
+    geom_sf(aes(fill=PeatMedian)) +
+    scale_fill_gradientn(limits = c(min(maps2$Mineralmedian),  max(maps2$PeatMedian)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatMed, mineralMed, 
+          labels = c("Peat Median", "Mineral Median"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+
+###### Third Quartile (75th Percentile)
+
+New Guinea substantially increases in peatland soil carbon values at the third quartile. South Brazil, China, and East Africa are also higher than the rest of the world. 
+
+The mineral ratios stay pretty visually the same. 
+
+```{r}
+#Detailed code description under 5th percentile
+minQ3<-ggplot(maps2)+ 
+    geom_sf(aes(fill=MineralQ3)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ3),  max(maps2$PeatQ3)), colours = rev(terrain.colors(10)))
+
+peatQ3<-ggplot(maps2)+ 
+    geom_sf(aes(fill=PeatQ3)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ3),  max(maps2$PeatQ3)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ3, minQ3, 
+          labels = c("Peat 75th Percentile", "Mineral 75th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Ninety-Fifth Percentile
+
+The major noticeable trend is how peat carbon in New Guinea continued to increase, but the shared Island space with Indonesia did not have the same increase in the peatland soil carbon. The mineral soil carbon on this island also appears to be much higher than the rest of the world. Indicating potential issues in land use classification. 
+
+```{r}
+#Detailed code description under 5th percentile
+min95<-ggplot(maps2)+ 
+    geom_sf(aes(fill=MineralQ95)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ95),  max(maps2$Peat95)), colours = rev(terrain.colors(10)))
+
+peat95<-ggplot(maps2)+ 
+    geom_sf(aes(fill=Peat95)) +
+    scale_fill_gradientn(limits = c(min(maps2$MineralQ95),  max(maps2$Peat95)), colours = rev(terrain.colors(10)))
+
+ggarrange(peat95, min95, 
+          labels = c("Peat 95th Percentile", "Mineral 95th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+
+
+##### Scatter Plots {.active}
+
+One of the purposes of this project is to directly compare the mineral soils to the peatland soils to determine if the correct input values are in GCAM. 
+
+To do this for each basin, the peat median and mineral median are directly compared, and split into categories based on the amount of soil peat:  
+
+- low, less than 1.5% peat, pink  
+- medium, between 1.5-5%, green 
+- high, greater than 5% peat, blue    
+
+There is a 1:1 line superimposed on the graph, showing the value that mineral and peat are equal.
+
+```{r}
+#Creating the Scatter Plot by Color
+
+init<-ggscatter(maps1, 
+    #Define the value for X (Peat Median value)
+    x = "PeatMedian", 
+    #Define the values for y (Minearl Median value) 
+    y = "Mineralmedian", 
+    #Use the category column to set the shapes and color
+    shape="category", color="category")+
+    #Utilize the geom_abline to create a 1:1 ratio line
+    geom_abline(intercept = 0, slope = 1)+
+    #Add the correlation values and their location label
+  stat_cor(method = "pearson", label.x = 3)
+
+#plot the function
+init
+```
+
+Interestingly, a majority of the basins show no real deviation from the line, and about half the basins have mineral soils with higher median carbon than peat, and the other half have higher carbon in peat basins. 
+
+To calculate basins that this peat/mineral differences could potentially make a huge difference, the peat to mineral ratio was calculated. There were three basins with greater than 1.5% that the mineral soils may be overestimated, but a majority of these basins were classified as low peat areas. 
+
+```{r, results=TRUE}
+
+maps1$ratio<-maps1$PeatMedian / maps1$Mineralmedian
+
+highRatio<-maps1
+highRatio$geometry<-NULL
+
+highRatio<-highRatio %>%
+  dplyr::filter(ratio >1.495)
+
+highTable<-highRatio %>% dplyr::select(basin_nm, reg_nm, category, TotmedianC, Mineralmedian, PeatMedian)
+
+hT<-highTable %>%
+  kbl(caption = "Basins that show Differences in Peat and Mineral Soil Via a Peat/Mineral Ratio", digits= 1, col.names = c("Basin Name", "Region Name", 
+                           "Category",
+                           "Total Median Soil Carbon",
+                           "Median Mineral Carbon",
+                           "Median Peat Carbon")) %>%
+  kable_styling(bootstrap_options = "striped")
+
+hT
+```
+
+BECAUSE the peat areas in these basins are so low, it makes very little difference on the overall mean soil carbon values. The plot below shows that there is a less prominent linear regression trend, meaning that there is a bigger difference between median soil carbon in peatlands vs mineral lands.
+
+```{r}
+
+
+sp <- ggscatter(maps1, x = "PeatMedian", y = "Mineralmedian",
+                add = "reg.line",               # Add regression line
+                conf.int = TRUE,                # Add confidence interval
+                color = "category",  # Color by groups "cyl"
+                #shape = "category"                   # Change point shape by groups "cyl"
+                )+
+  stat_cor(aes(color = category), label.x = 3)       # Add correlation coefficient
+sp
+```
+
+
+##### Boxplots
+
+These box plots aggregate all of the basins together and show the median, and Interquartile Range.
+
+```{r}
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Peatlands")
+
+peatLand<-read_csv("peatSoilFull.csv")
+
+peatLand$IQR<- peatLand$Q3-peatLand$Q1
+peatLand$FivetoNinetyFiveRange<- peatLand$`95`-peatLand$Q5
+
+peatTypeOrder<- c("Peat", "Mineral", "Total")
+peatTypeColorOrder<- c("green", "red", "yellow")
+
+# Summary Stats for Globe-------------------
+
+ggplot(peatLand, aes(y= `Type`, x= Median))+geom_boxplot()
+```
+
+Overall, there is more variability in the mineral soils, and because the peatland encompasses such a small area, the total soil carbon values mimic closely the mineral soils. The peatland soils have a higher median than mineral, with more outliers in the upper ranges. 
+
+```{r}
+ggplot(peatLand, aes(y= `Type`, x= IQR))+geom_boxplot()
+
+```
+
+The interquartile range length in all of the categories are about the same, with peat values having a higher outliers clustering together. 
+
+##### Dumbbell Plots
+
+The dumbbell plots feature the 12 basins with the most peat. 
+
+###### South America
+
+The first noticeable element in the South American basins are the tight margins in the 5-95 % range (colored bar). The Orinoco Basin in Columbia shows a tailed distribution (many values above the Q3 blue bar) for the mineral soils (and total soils), paired with the high levels of mineral soil carbon, may indicate an underestimation of peatland soils. This is one of the basins that mineral soils have a higher soil carbon than the peatlands.
+
+The other basins also have mineral soils with a higher median soil carbon than peatlands. However, they are close in value.
+
+```{r}
+
+#South America                              
+peat7168<-peatLand%>%filter(key== 7168)
+
+peat32168<-peatLand%>%filter(key== 32168)
+
+peat25168<-peatLand%>%filter(key== 25168)
+
+peat7161<-peatLand%>%filter(key== 7161)
+                            
+peat32156<-peatLand%>%filter(key== 32156)
+
+pSA1<-ggplot(peat7168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSA2<-ggplot(peat32168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+
+  theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: SA Northern") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSA3<-ggplot(peat25168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Amazon: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSA4<-ggplot(peat7161)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("NE SA South Atlantic Coast: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSA5<-ggplot(peat32156)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Orinoco: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSA1, pSA2, pSA3, pSA4, pSA5,
+          label.x = 0,
+          ncol = 2, nrow = 3, align = "v" )
+
+```
+
+###### Southeast Asia
+
+There is a lot more uncertainty in Southeast Asia, with a wider range from the 5-95% percentile (colored bar). Like the Orinoco in Columbia, the Fly basin in Southeast Asia has a long tailed skew in the mineral soils. The soil carbon IQR (blue box) is supposed to be wider and above the values in peatland, vs the mineral soils.
+
+```{r}
+peat29159<-peatLand%>%filter(key== 29159) 
+
+peat29173<-peatLand%>%filter(key== 29173)
+
+peat29181<-peatLand%>%filter(key== 29181)
+
+pSEA1<-ggplot(peat29159)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("North Borneo Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEA2<-ggplot(peat29173)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Papua New Guinea Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEA3<-ggplot(peat29181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSEA1, pSEA2, pSEA3,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+
+
+```
+
+###### Indonesia 
+
+Like the Fly in Southeast Asia, the Irian Jaya Coast has a huge range in mineral soils that does not exist in peatland. 
+
+```{r}
+
+#Indonesia                             
+peat18181<-peatLand%>%filter(key== 18181)
+peat18167<-peatLand%>%filter(key== 18167)
+peat18165<-peatLand%>%filter(key== 18165)
+peat18163<-peatLand%>%filter(key== 18163)
+
+
+pIndo1<-ggplot(peat18181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndo2<-ggplot(peat18167)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Irian Jaya Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndo3<-ggplot(peat18165)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Kalimantan") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+
+pIndo4<-ggplot(peat18163)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Sumatra") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pIndo1, pIndo2, pIndo3, pIndo4,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+```
+
+
+
+
+#### FAO Soil Raster  {.tabset .tabset-fade .tabset-pills}
+
+The FAO Soil Organic Carbon Stock in tC/ha is located below. The data was mapped, then trimmed to GCAM region basins, unlike the table above, these results are tailored to the median. 
+
+```{r}
+#On my computer, I have to switch the directory to display the raster
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+#Use the terra package to import the raster
+soilFAOC<-rast("Reproject_FAO_100cm.tif")
+
+#Plot the overall soil carbon raster
+plot(soilFAOC)
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"))
+
+
+#Save a new basin output with the new projection
+peatFAOOutput<-BasinShapeFile_igh
+
+#Read in the peatOutput.csv derived from the pre-processing file
+peatFAOSoils<-read_csv("FAOpeatOutput.csv")
+
+#remove the duplicate columns that the map boundary files and peat Output has in common, basin names, region names, basin id, and region id
+
+#***Special Note: If you use the pre-processing file code directly, this step can be omitted, as these values are saved directly to the shapefile. However, this shortcut is designed to save the processing and heavy programming lifting***. 
+
+peatFAOSoils$basin_nm<-NULL
+peatFAOSoils$reg_nm<-NULL
+peatFAOSoils$basin_id<-NULL
+peatFAOSoils$reg_id<-NULL
+peatFAOSoils$...1<-NULL
+
+
+#Merge the projected shapefile with the peat information by basin
+mapFAOFile<-merge(peatFAOOutput, peatFAOSoils, by='key')
+
+mapFAOFile$PerPeat<-as.numeric(mapFAOFile$PeatArea/mapFAOFile$TotArea*100)
+
+mapFAOFile<- mapFAOFile %>%
+  filter(PerPeat > 0)
+```
+
+```{r, results=TRUE}
+#Create the tropical Peatland Table for Top Basins (percentage and Area)
+
+#Results must be TRUE to show the text variables and tables
+
+#Find the top peat percentage basins
+peatFAOTable<- mapFAOFile %>%
+  arrange(desc(PerPeat))
+
+#strip off the geometry (shapefile) to create a table
+peatFAOTable$geometry<-NULL
+  
+#Create a new table 
+selTable<-peatFAOTable %>%
+  #Get the variables we want to summerize
+  dplyr::select(basin_nm, reg_nm, PerPeat, TotmeanC, MineralMean, PeatMean)
+
+#Grab only the top 12 basins
+table<-head(selTable, 13)
+
+#Format the table using the kable extra package
+table %>%
+  #Create the table label
+  kbl(caption = "Top Peat Percentage Basins", 
+      #Set the number of Significant Digits
+      digits= 1, 
+      #Specify the column names
+      col.names = c("Basin Name", "Region Name",
+                           "Percent Peat",
+                           "Total Mean Soil Carbon",
+                           "Mean Mineral Carbon",
+                           "Mean Peat Carbon")) %>%
+  #Add the striped kable styling option
+  kable_styling(bootstrap_options = "striped")
+  
+
+
+```
+
+This is a subset of results on the FAO Organic Carbon Stocks. Click on each of these tabs to explore different summaries and visualizations of the data. 
+
+- Scatter Plots: Look at the relationships between the median mineral soil carbon and peatland soil carbon values. HINT, with this data, having a more linear the relationship (the closer to the 1:1 line on the chart), is not necessarily a great thing.
+
+- Box Plots: This aggregates ALL watersheds, and presents the median, interquartile range, and 5%-95% range.
+
+- Maps : Look at the different data quartiles of each of the basins that have peatland whatsoever. Each different map has a different color scale, but the color scales between the two maps on each tab are the same. The code dropdown on the map tab describes the basic elements needed for visualization.
+
+- Dumbbell Plots: In the 12 basins with 5% or more peatland, the dumbbell plots show 
+
+|           - the entire range
+|           - the 5-95% ratio is the colored bar
+|           - the vertical blue lines are the first to third quartile
+|           - the red dot is the median
+
+##### Maps
+
+Select the tabs below to get the maps representing the total carbon for both peat and mineral soils at different intervals. Each tab has the same color scheme, but they are not comparative between the tabs. 
+
+```{r}
+#These are the functions that are used to created the stacked mineral soil and soil organic carbon mapping files. The overall code approach is as follows, and is documented under the Fifth Percentile tab
+
+# Create the mineral map at each percentile
+# Create the peat map at each percentile
+# Set the gradient of the fill using the minimum value of the mineral soil, and the maximum of the peat variable
+# Change the color gradient to the reverse terrain colors
+# Use ggarrange to stack the peat raster on top of the mineral raster
+# Label each map
+# Set it for one column and two rows
+# Use the vertical alignment to match the data scales
+
+```
+
+###### Fifth Percentile
+
+Mineral soils in this region are greatest in Southeast Asia as well as the Northern Amazon. Peatland soil carbon in East Africa, China, and New Guinea are higher than other regions.
+
+```{r}
+#Mapping Visualizations Procedure
+
+#Create a mineral soil map at the 5th percentile, using ggplot
+minQ5<-ggplot(mapFAOFile)+ 
+    #Set which variable to visualize (in this case, Mineral, 5th percentile)
+    geom_sf(aes(fill=MineralQ5)) +
+    #Use the scale fill gradientn to create custom color palette for both maps
+    scale_fill_gradientn(
+    #the limits function sets the scales
+    limits = c(
+    #the minimum value is the minimum of the carbon mineral values
+    min(mapFAOFile$MineralQ5),  
+    #the maximum value is the maximum of the carbon in peatland
+    max(mapFAOFile$PeatQ5)), 
+    #Set the color scale as reverse terrain colors (low =white, green = high)
+    colours = rev(terrain.colors(10)))
+
+#Repeat for peatland
+peatQ5<-ggplot(mapFAOFile)+ 
+    #Using peatland fill
+    geom_sf(aes(fill=PeatQ5)) +
+    #The scale for this map is identical to the previous
+    scale_fill_gradientn(limits = c(min(mapFAOFile$MineralQ5),  max(mapFAOFile$PeatQ5)), 
+    #The color scale also matches above
+    colours = rev(terrain.colors(10)))
+
+#Stack the two maps together using ggarrange
+ggarrange(
+    #Set the two maps in order
+    peatQ5, minQ5, 
+    #Create the Labels for both maps
+    labels = c("Peat 5th Percentile", "Mineral 5th Percentile"),
+    #Set the total number of columns and rows      
+    ncol = 1, nrow = 2, 
+    #Align the vertical axis (by longitude)
+    align = "v")
+
+```
+
+###### First Quartile (25th Percentile)
+
+```{r}
+#Detailed code description under 5th percentile
+peatQ1<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=MineralQ1)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$MineralQ1),  max(mapFAOFile$PeatQ1)), colours = rev(terrain.colors(10)))
+
+minQ1<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=PeatQ1)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$MineralQ1),  max(mapFAOFile$PeatQ1)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ1, minQ1, 
+          labels = c("Peat 25th Percentile", "Mineral 25th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Median
+
+```{r}
+
+#Detailed description under 5th percentile
+mineralMed<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=Mineralmedian)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$Mineralmedian),  max(mapFAOFile$PeatMedian)), colours = rev(terrain.colors(10)))
+
+peatMed<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=PeatMedian)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$Mineralmedian),  max(mapFAOFile$PeatMedian)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatMed, mineralMed, 
+          labels = c("Peat Median", "Mineral Median"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Third Quartile (75th Percentile)
+
+
+
+```{r}
+#Detailed code description under 5th percentile
+minQ3<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=MineralQ3)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$MineralQ3),  max(mapFAOFile$PeatQ3)), colours = rev(terrain.colors(10)))
+
+peatQ3<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=PeatQ3)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$MineralQ3),  max(mapFAOFile$PeatQ3)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ3, minQ3, 
+          labels = c("Peat 75th Percentile", "Mineral 75th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Ninety-Fifth Percentile
+
+The major noticeable trend is how peat carbon in New Guinea continued to increase, but the shared Island space with Indonesia did not have the same increase in the peatland soil carbon. The mineral soil carbon on this island also appears to be much higher than the rest of the world. Indicating potential issues in land use classification. 
+
+```{r}
+#Detailed code description under 5th percentile
+min95<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=MineralQ95)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$MineralQ95),  max(mapFAOFile$Peat95)), colours = rev(terrain.colors(10)))
+
+peat95<-ggplot(mapFAOFile)+ 
+    geom_sf(aes(fill=Peat95)) +
+    scale_fill_gradientn(limits = c(min(mapFAOFile$MineralQ95),  max(mapFAOFile$Peat95)), colours = rev(terrain.colors(10)))
+
+ggarrange(peat95, min95, 
+          labels = c("Peat 95th Percentile", "Mineral 95th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+
+
+##### Scatter Plots
+
+```{r}
+#Creating the Scatter Plot by Color
+
+mapFAOUp <- mapFAOFile %>% 
+  #Use the mutate function to create a new column
+  #Cut splits the Percent peat by the breaks defined
+  mutate(category=cut(PerPeat, breaks=c(0,1.5,5,20),
+  #Add the column values for each breaks.
+  labels=c("low < 1.5%","middle","high: > 5%")))
+
+init<-ggscatter(mapFAOUp, 
+    #Define the value for X (Peat Median value)
+    x = "PeatMedian", 
+    #Define the values for y (Minearl Median value) 
+    y = "Mineralmedian", 
+    #Use the category column to set the shapes and color
+    shape="category", color="category")+
+    #Utilize the geom_abline to create a 1:1 ratio line
+    geom_abline(intercept = 0, slope = 1)+
+    #Add the correlation values and their location label
+  stat_cor(method = "pearson", label.x = 3)
+
+#plot the function
+init
+```
+
+```{r}
+mapFAOUp$ratio<-mapFAOUp$PeatMedian / mapFAOUp$Mineralmedian
+
+highFAORatio<-mapFAOUp
+highFAORatio$geometry<-NULL
+
+highFAORatio<-highFAORatio %>%
+  dplyr::filter(!between(ratio, -1.495, 1.495))
+
+highFAOTable<-highFAORatio %>% dplyr::select(basin_nm, reg_nm, category, TotmedianC, Mineralmedian, PeatMedian)
+
+hT<-highFAOTable %>%
+  kbl(caption = "Basins that show Differences in Peat and Mineral Soil Via a Peat/Mineral Ratio", digits= 1, col.names = c("Basin Name", "Region Name", 
+                           "Category",
+                           "Total Median Soil Carbon",
+                           "Median Mineral Carbon",
+                           "Median Peat Carbon")) %>%
+  kable_styling(bootstrap_options = "striped")
+
+hT
+```
+
+
+```{r}
+
+
+sp <- ggscatter(mapFAOUp, x = "PeatMedian", y = "Mineralmedian",
+                add = "reg.line",               # Add regression line
+                conf.int = TRUE,                # Add confidence interval
+                color = "category",  # Color by groups "cyl"
+                #shape = "category"                   # Change point shape by groups "cyl"
+                )+
+  stat_cor(aes(color = category), label.x = 3)       # Add correlation coefficient
+sp
+```
+
+##### Boxplots
+
+These box plots aggregate all of the basins together and show the median, and Interquartile Range.
+
+```{r}
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+peatFAOSoilsDB<-read_csv("peatSoilFAODB.csv")
+
+
+peatFAOSoilsDB$IQR<- peatFAOSoilsDB$Q3-peatFAOSoilsDB$Q1
+peatFAOSoilsDB$FivetoNinetyFiveRange<- peatFAOSoilsDB$`95`-peatFAOSoilsDB$Q5
+
+peatTypeOrder<- c("Peat", "Mineral", "Total")
+peatTypeColorOrder<- c("green", "red", "yellow")
+
+# Summary Stats for Globe-------------------
+
+ggplot(peatFAOSoilsDB, aes(y= `Type`, x= Median))+geom_boxplot()
+```
+
+```{r}
+
+ggplot(peatFAOSoilsDB, aes(y= `Type`, x= IQR))+geom_boxplot()
+
+```
+
+
+
+##### Dumbell Plots {.active}
+
+The dumbbell plots feature the 12 basins with the most peat. 
+
+###### South America
+
+
+```{r}
+
+#South America                              
+peatFAO7168<-peatFAOSoilsDB%>%filter(key== 7168)
+
+peatFAO32168<-peatFAOSoilsDB%>%filter(key== 32168)
+
+peatFAO25168<-peatFAOSoilsDB%>%filter(key== 25168)
+
+peatFAO7161<-peatFAOSoilsDB%>%filter(key== 7161)
+                            
+peatFAO32156<-peatFAOSoilsDB%>%filter(key== 32156)
+
+pSAFAO1<-ggplot(peatFAO7168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAFAO2<-ggplot(peatFAO32168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+
+  theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: SA Northern") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAFAO3<-ggplot(peatFAO25168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Amazon: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAFAO4<-ggplot(peatFAO7161)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("NE SA South Atlantic Coast: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAFAO5<-ggplot(peatFAO32156)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Orinoco: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSAFAO1, pSAFAO2, pSAFAO3, pSAFAO4, pSAFAO5,
+          label.x = 0,
+          ncol = 2, nrow = 3, align = "v" )
+
+```
+
+###### Southeast Asia
+
+
+```{r}
+peatFAO29159<-peatFAOSoilsDB%>%filter(key== 29159) 
+
+peatFAO29173<-peatFAOSoilsDB%>%filter(key== 29173)
+
+peatFAO29181<-peatFAOSoilsDB%>%filter(key== 29181)
+
+pSEAFAO1<-ggplot(peatFAO29159)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("North Borneo Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEAFAO2<-ggplot(peatFAO29173)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Papua New Guinea Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEAFAO3<-ggplot(peatFAO29181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSEAFAO1, pSEAFAO2, pSEAFAO3,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+
+
+```
+
+###### Indonesia 
+
+Like the Fly in Southeast Asia, the Irian Jaya Coast has a huge range in mineral soils that does not exist in peatland. 
+
+```{r}
+
+#Indonesia                             
+peatFAO18181<-peatFAOSoilsDB%>%filter(key== 18181)
+peatFAO18167<-peatFAOSoilsDB%>%filter(key== 18167)
+peatFAO18165<-peatFAOSoilsDB%>%filter(key== 18165)
+peatFAO18163<-peatFAOSoilsDB%>%filter(key== 18163)
+
+
+pIndoFAO1<-ggplot(peatFAO18181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndoFAO2<-ggplot(peatFAO18167)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Irian Jaya Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndoFAO3<-ggplot(peatFAO18165)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Kalimantan") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+
+pIndoFAO4<-ggplot(peatFAO18163)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Sumatra") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pIndoFAO1, pIndoFAO2, pIndoFAO3, pIndoFAO4,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+```
+
+
+
+
+#### Soil Grids 2017 Depth {.tabset .tabset-fade .tabset-pills}
+
+The intial soil carbon stock estimate from the first soilgrids approach is located below. The data was mapped, then trimmed to GCAM region basins, unlike the table above, these results are tailored to the median. 
+
+```{r}
+#On my computer, I have to switch the directory to display the raster
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilSG17C<-rast("SG2017stocks30cm.tif")
+
+plot(soilSG17C)
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"))
+
+
+#Save a new basin output with the new projection
+peatSG17Output<-BasinShapeFile_igh
+
+#Read in the peatOutput.csv derived from the pre-processing file
+peatSG17Soils<-read_csv("SOC17peatOutput.csv")
+
+#remove the duplicate columns that the map boundary files and peat Output has in common, basin names, region names, basin id, and region id
+
+#***Special Note: If you use the pre-processing file code directly, this step can be omitted, as these values are saved directly to the shapefile. However, this shortcut is designed to save the processing and heavy programming lifting***. 
+
+peatSG17Soils$basin_nm<-NULL
+peatSG17Soils$reg_nm<-NULL
+peatSG17Soils$basin_id<-NULL
+peatSG17Soils$reg_id<-NULL
+peatSG17Soils$...1<-NULL
+
+
+#Merge the projected shapefile with the peat information by basin
+mapSG17File<-merge(peatSG17Output, peatSG17Soils, by='key')
+
+mapSG17File$PerPeat<-as.numeric(mapSG17File$PeatArea/mapSG17File$TotArea*100)
+
+mapSG17File<- mapSG17File %>%
+  filter(PerPeat > 0)
+```
+
+```{r, results=TRUE}
+#Create the tropical Peatland Table for Top Basins (percentage and Area)
+
+#Results must be TRUE to show the text variables and tables
+
+#Find the top peat percentage basins
+peatSG17Table<- mapSG17File %>%
+  arrange(desc(PerPeat))
+
+#strip off the geometry (shapefile) to create a table
+peatSG17Table$geometry<-NULL
+  
+#Create a new table 
+selTable<-peatSG17Table %>%
+  #Get the variables we want to summerize
+  dplyr::select(basin_nm, reg_nm, PerPeat, TotmedianC, Mineralmedian, PeatMedian)
+
+#Grab only the top 12 basins
+table<-head(selTable, 13)
+
+#Format the table using the kable extra package
+table %>%
+  #Create the table label
+  kbl(caption = "Top Peat Percentage Basins", 
+      #Set the number of Significant Digits
+      digits= 1, 
+      #Specify the column names
+      col.names = c("Basin Name", "Region Name",
+                           "Percent Peat",
+                           "Total Median Soil Carbon",
+                           "Median Mineral Carbon",
+                           "Median Peat Carbon")) %>%
+  #Add the striped kable styling option
+  kable_styling(bootstrap_options = "striped")
+  
+
+
+```
+
+This is a subset of results on the SoilGrids 2017 Organic Carbon Stocks. Click on each of these tabs to explore different summaries and visualizations of the data. 
+
+- Scatter Plots: Look at the relationships between the median mineral soil carbon and peatland soil carbon values. HINT, with this data, having a more linear the relationship (the closer to the 1:1 line on the chart), is not necessarily a great thing.
+
+- Box Plots: This aggregates ALL watersheds, and presents the median, interquartile range, and 5%-95% range.
+
+- Maps : Look at the different data quartiles of each of the basins that have peatland whatsoever. Each different map has a different color scale, but the color scales between the two maps on each tab are the same. The code dropdown on the map tab describes the basic elements needed for visualization.
+
+- Dumbbell Plots: In the 12 basins with 5% or more peatland, the dumbbell plots show 
+
+|           - the entire range
+|           - the 5-95% ratio is the colored bar
+|           - the vertical blue lines are the first to third quartile
+|           - the red dot is the median
+
+##### Maps
+
+Select the tabs below to get the maps representing the total carbon for both peat and mineral soils at different intervals. Each tab has the same color scheme, but they are not comparative between the tabs. 
+
+```{r}
+#These are the functions that are used to created the stacked mineral soil and soil organic carbon mapping files. The overall code approach is as follows, and is documented under the Fifth Percentile tab
+
+# Create the mineral map at each percentile
+# Create the peat map at each percentile
+# Set the gradient of the fill using the minimum value of the mineral soil, and the maximum of the peat variable
+# Change the color gradient to the reverse terrain colors
+# Use ggarrange to stack the peat raster on top of the mineral raster
+# Label each map
+# Set it for one column and two rows
+# Use the vertical alignment to match the data scales
+
+```
+
+###### Fifth Percentile
+
+Mineral soils in this region are greatest in Southeast Asia as well as the Northern Amazon. Peatland soil carbon in East Africa, China, and New Guinea are higher than other regions.
+
+```{r}
+#Mapping Visualizations Procedure
+
+#Create a mineral soil map at the 5th percentile, using ggplot
+minQ5<-ggplot(mapSG17File)+ 
+    #Set which variable to visualize (in this case, Mineral, 5th percentile)
+    geom_sf(aes(fill=MineralQ5)) +
+    #Use the scale fill gradientn to create custom color palette for both maps
+    scale_fill_gradientn(
+    #the limits function sets the scales
+    limits = c(
+    #the minimum value is the minimum of the carbon mineral values
+    min(mapSG17File$MineralQ5),  
+    #the maximum value is the maximum of the carbon in peatland
+    max(mapSG17File$PeatQ5)), 
+    #Set the color scale as reverse terrain colors (low =white, green = high)
+    colours = rev(terrain.colors(10)))
+
+#Repeat for peatland
+peatQ5<-ggplot(mapSG17File)+ 
+    #Using peatland fill
+    geom_sf(aes(fill=PeatQ5)) +
+    #The scale for this map is identical to the previous
+    scale_fill_gradientn(limits = c(min(mapSG17File$MineralQ5),  max(mapSG17File$PeatQ5)), 
+    #The color scale also matches above
+    colours = rev(terrain.colors(10)))
+
+#Stack the two maps together using ggarrange
+ggarrange(
+    #Set the two maps in order
+    peatQ5, minQ5, 
+    #Create the Labels for both maps
+    labels = c("Peat 5th Percentile", "Mineral 5th Percentile"),
+    #Set the total number of columns and rows      
+    ncol = 1, nrow = 2, 
+    #Align the vertical axis (by longitude)
+    align = "v")
+
+```
+
+###### First Quartile (25th Percentile)
+
+```{r}
+#Detailed code description under 5th percentile
+peatQ1<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=MineralQ1)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$MineralQ1),  max(mapSG17File$PeatQ1)), colours = rev(terrain.colors(10)))
+
+minQ1<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=PeatQ1)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$MineralQ1),  max(mapSG17File$PeatQ1)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ1, minQ1, 
+          labels = c("Peat 25th Percentile", "Mineral 25th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Median
+
+```{r}
+
+#Detailed description under 5th percentile
+mineralMed<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=Mineralmedian)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$Mineralmedian),  max(mapSG17File$PeatMedian)), colours = rev(terrain.colors(10)))
+
+peatMed<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=PeatMedian)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$Mineralmedian),  max(mapSG17File$PeatMedian)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatMed, mineralMed, 
+          labels = c("Peat Median", "Mineral Median"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Third Quartile (75th Percentile)
+
+
+
+```{r}
+#Detailed code description under 5th percentile
+minQ3<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=MineralQ3)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$MineralQ3),  max(mapSG17File$PeatQ3)), colours = rev(terrain.colors(10)))
+
+peatQ3<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=PeatQ3)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$MineralQ3),  max(mapSG17File$PeatQ3)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ3, minQ3, 
+          labels = c("Peat 75th Percentile", "Mineral 75th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Ninety-Fifth Percentile
+
+The major noticeable trend is how peat carbon in New Guinea continued to increase, but the shared Island space with Indonesia did not have the same increase in the peatland soil carbon. The mineral soil carbon on this island also appears to be much higher than the rest of the world. Indicating potential issues in land use classification. 
+
+```{r}
+#Detailed code description under 5th percentile
+min95<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=MineralQ95)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$MineralQ95),  max(mapSG17File$Peat95)), colours = rev(terrain.colors(10)))
+
+peat95<-ggplot(mapSG17File)+ 
+    geom_sf(aes(fill=Peat95)) +
+    scale_fill_gradientn(limits = c(min(mapSG17File$MineralQ95),  max(mapSG17File$Peat95)), colours = rev(terrain.colors(10)))
+
+ggarrange(peat95, min95, 
+          labels = c("Peat 95th Percentile", "Mineral 95th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+
+
+##### Scatter Plots
+
+```{r}
+#Creating the Scatter Plot by Color
+
+mapSG17Up <- mapSG17File %>% 
+  #Use the mutate function to create a new column
+  #Cut splits the Percent peat by the breaks defined
+  mutate(category=cut(PerPeat, breaks=c(0,1.5,5,20),
+  #Add the column values for each breaks.
+  labels=c("low < 1.5%","middle","high: > 5%")))
+
+init<-ggscatter(mapSG17Up, 
+    #Define the value for X (Peat Median value)
+    x = "PeatMedian", 
+    #Define the values for y (Minearl Median value) 
+    y = "Mineralmedian", 
+    #Use the category column to set the shapes and color
+    shape="category", color="category")+
+    #Utilize the geom_abline to create a 1:1 ratio line
+    geom_abline(intercept = 0, slope = 1)+
+    #Add the correlation values and their location label
+  stat_cor(method = "pearson", label.x = 3)
+
+#plot the function
+init
+```
+
+```{r}
+mapSG17Up$ratio<-mapSG17Up$PeatMedian / mapSG17Up$Mineralmedian
+
+highSG17Ratio<-mapSG17Up
+highSG17Ratio$geometry<-NULL
+
+highSG17Ratio<-highSG17Ratio %>%
+  dplyr::filter(!between(ratio, 0.495, 1.495))
+
+highSG17Table<-highSG17Ratio %>% dplyr::select(basin_nm, reg_nm, category, TotmedianC, Mineralmedian, PeatMedian)
+
+hT<-highSG17Table %>%
+  kbl(caption = "Basins that show Differences in Peat and Mineral Soil Via a Peat/Mineral Ratio", digits= 1, col.names = c("Basin Name", "Region Name", 
+                           "Category",
+                           "Total Median Soil Carbon",
+                           "Median Mineral Carbon",
+                           "Median Peat Carbon")) %>%
+  kable_styling(bootstrap_options = "striped")
+
+hT
+```
+
+
+```{r}
+
+
+sp <- ggscatter(mapSG17Up, x = "PeatMedian", y = "Mineralmedian",
+                add = "reg.line",               # Add regression line
+                conf.int = TRUE,                # Add confidence interval
+                color = "category",  # Color by groups "cyl"
+                #shape = "category"                   # Change point shape by groups "cyl"
+                )+
+  stat_cor(aes(color = category), label.x = 3)       # Add correlation coefficient
+sp
+```
+
+##### Boxplots
+
+These box plots aggregate all of the basins together and show the median, and Interquartile Range.
+
+```{r}
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+peatSG17SoilsDB<-read_csv("peatSoilSG17DB.csv")
+
+
+peatSG17SoilsDB$IQR<- peatSG17SoilsDB$Q3-peatSG17SoilsDB$Q1
+peatSG17SoilsDB$FivetoNinetyFiveRange<- peatSG17SoilsDB$`95`-peatSG17SoilsDB$Q5
+
+peatTypeOrder<- c("Peat", "Mineral", "Total")
+peatTypeColorOrder<- c("green", "red", "yellow")
+
+# Summary Stats for Globe-------------------
+
+ggplot(peatSG17SoilsDB, aes(y= `Type`, x= Median))+geom_boxplot()
+```
+
+```{r}
+
+ggplot(peatSG17SoilsDB, aes(y= `Type`, x= IQR))+geom_boxplot()
+
+```
+
+
+
+##### Dumbell Plots {.active}
+
+The dumbbell plots feature the 12 basins with the most peat. 
+
+###### South America
+
+
+```{r}
+
+#South America                              
+peatSG177168<-peatSG17SoilsDB%>%filter(key== 7168)
+
+peatSG1732168<-peatSG17SoilsDB%>%filter(key== 32168)
+
+peatSG1725168<-peatSG17SoilsDB%>%filter(key== 25168)
+
+peatSG177161<-peatSG17SoilsDB%>%filter(key== 7161)
+                            
+peatSG1732156<-peatSG17SoilsDB%>%filter(key== 32156)
+
+pSASG171<-ggplot(peatSG177168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSASG172<-ggplot(peatSG1732168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+
+  theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: SA Northern") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSASG173<-ggplot(peatSG1725168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Amazon: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSASG174<-ggplot(peatSG177161)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("NE SA South Atlantic Coast: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSASG175<-ggplot(peatSG1732156)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Orinoco: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSASG171, pSASG172, pSASG173, pSASG174, pSASG175,
+          label.x = 0,
+          ncol = 2, nrow = 3, align = "v" )
+
+```
+
+###### Southeast Asia
+
+
+```{r}
+peatSG1729159<-peatSG17SoilsDB%>%filter(key== 29159) 
+
+peatSG1729173<-peatSG17SoilsDB%>%filter(key== 29173)
+
+peatSG1729181<-peatSG17SoilsDB%>%filter(key== 29181)
+
+pSEASG171<-ggplot(peatSG1729159)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("North Borneo Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEASG172<-ggplot(peatSG1729173)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Papua New Guinea Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEASG173<-ggplot(peatSG1729181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSEASG171, pSEASG172, pSEASG173,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+
+
+```
+
+###### Indonesia 
+
+Like the Fly in Southeast Asia, the Irian Jaya Coast has a huge range in mineral soils that does not exist in peatland. 
+
+```{r}
+
+#Indonesia                             
+peatSG1718181<-peatSG17SoilsDB%>%filter(key== 18181)
+peatSG1718167<-peatSG17SoilsDB%>%filter(key== 18167)
+peatSG1718165<-peatSG17SoilsDB%>%filter(key== 18165)
+peatSG1718163<-peatSG17SoilsDB%>%filter(key== 18163)
+
+
+pIndoSG171<-ggplot(peatSG1718181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndoSG172<-ggplot(peatSG1718167)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Irian Jaya Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndoSG173<-ggplot(peatSG1718165)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Kalimantan") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+
+pIndoSG174<-ggplot(peatSG1718163)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Sumatra") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pIndoSG171, pIndoSG172, pIndoSG173, pIndoSG174,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+```
+
+
+
+
+
+#### Original GCAM Dataset {.tabset .tabset-fade .tabset-pills}
+
+The intial soil carbon stock estimate from the GCAM original approach is located below. The data was mapped, then trimmed to GCAM region basins, unlike the table above, these results are tailored to the median. 
+
+```{r}
+#On my computer, I have to switch the directory to display the raster
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilGCAMC<-rast("GCAM_SOC_Raster1.tif")
+
+plot(soilGCAMC)
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"))
+
+
+#Save a new basin output with the new projection
+peatGCAMOutput<-BasinShapeFile_igh
+
+#Read in the peatOutput.csv derived from the pre-processing file
+peatGCAMSoils<-read_csv("SOCGCAMpeatOutput.csv")
+
+#remove the duplicate columns that the map boundary files and peat Output has in common, basin names, region names, basin id, and region id
+
+#***Special Note: If you use the pre-processing file code directly, this step can be omitted, as these values are saved directly to the shapefile. However, this shortcut is designed to save the processing and heavy programming lifting***. 
+
+peatGCAMSoils$basin_nm<-NULL
+peatGCAMSoils$reg_nm<-NULL
+peatGCAMSoils$basin_id<-NULL
+peatGCAMSoils$reg_id<-NULL
+peatGCAMSoils$...1<-NULL
+
+
+#Merge the projected shapefile with the peat information by basin
+mapGCAMFile<-merge(peatGCAMOutput, peatGCAMSoils, by='key')
+
+mapGCAMFile$PerPeat<-as.numeric(mapGCAMFile$PeatArea/mapGCAMFile$TotArea*100)
+
+mapGCAMFile<- mapGCAMFile %>%
+  filter(PerPeat > 0)
+```
+
+```{r, results=TRUE}
+#Create the tropical Peatland Table for Top Basins (percentage and Area)
+
+#Results must be TRUE to show the text variables and tables
+
+#Find the top peat percentage basins
+peatGCAMTable<- mapGCAMFile %>%
+  arrange(desc(PerPeat))
+
+#strip off the geometry (shapefile) to create a table
+peatGCAMTable$geometry<-NULL
+  
+#Create a new table 
+selTable<-peatGCAMTable %>%
+  #Get the variables we want to summerize
+  dplyr::select(basin_nm, reg_nm, PerPeat, TotmedianC, Mineralmedian, PeatMedian)
+
+#Grab only the top 12 basins
+table<-head(selTable, 13)
+
+#Format the table using the kable extra package
+table %>%
+  #Create the table label
+  kbl(caption = "Top Peat Percentage Basins", 
+      #Set the number of Significant Digits
+      digits= 1, 
+      #Specify the column names
+      col.names = c("Basin Name", "Region Name",
+                           "Percent Peat",
+                           "Total Median Soil Carbon",
+                           "Median Mineral Carbon",
+                           "Median Peat Carbon")) %>%
+  #Add the striped kable styling option
+  kable_styling(bootstrap_options = "striped")
+  
+
+
+```
+
+This is a subset of results on the Original Carbon Stocks. Click on each of these tabs to explore different summaries and visualizations of the data. 
+
+- Scatter Plots: Look at the relationships between the median mineral soil carbon and peatland soil carbon values. HINT, with this data, having a more linear the relationship (the closer to the 1:1 line on the chart), is not necessarily a great thing.
+
+- Box Plots: This aggregates ALL watersheds, and presents the median, interquartile range, and 5%-95% range.
+
+- Maps : Look at the different data quartiles of each of the basins that have peatland whatsoever. Each different map has a different color scale, but the color scales between the two maps on each tab are the same. The code dropdown on the map tab describes the basic elements needed for visualization.
+
+- Dumbbell Plots: In the 12 basins with 5% or more peatland, the dumbbell plots show 
+
+|           - the entire range
+|           - the 5-95% ratio is the colored bar
+|           - the vertical blue lines are the first to third quartile
+|           - the red dot is the median
+
+##### Maps
+
+Select the tabs below to get the maps representing the total carbon for both peat and mineral soils at different intervals. Each tab has the same color scheme, but they are not comparative between the tabs. 
+
+```{r}
+#These are the functions that are used to created the stacked mineral soil and soil organic carbon mapping files. The overall code approach is as follows, and is documented under the Fifth Percentile tab
+
+# Create the mineral map at each percentile
+# Create the peat map at each percentile
+# Set the gradient of the fill using the minimum value of the mineral soil, and the maximum of the peat variable
+# Change the color gradient to the reverse terrain colors
+# Use ggarrange to stack the peat raster on top of the mineral raster
+# Label each map
+# Set it for one column and two rows
+# Use the vertical alignment to match the data scales
+
+```
+
+###### Fifth Percentile
+
+Mineral soils in this region are greatest in Southeast Asia as well as the Northern Amazon. Peatland soil carbon in East Africa, China, and New Guinea are higher than other regions.
+
+```{r}
+#Mapping Visualizations Procedure
+
+#Create a mineral soil map at the 5th percentile, using ggplot
+minQ5<-ggplot(mapGCAMFile)+ 
+    #Set which variable to visualize (in this case, Mineral, 5th percentile)
+    geom_sf(aes(fill=MineralQ5)) +
+    #Use the scale fill gradientn to create custom color palette for both maps
+    scale_fill_gradientn(
+    #the limits function sets the scales
+    limits = c(
+    #the minimum value is the minimum of the carbon mineral values
+    min(mapGCAMFile$MineralQ5),  
+    #the maximum value is the maximum of the carbon in peatland
+    max(mapGCAMFile$PeatQ5)), 
+    #Set the color scale as reverse terrain colors (low =white, green = high)
+    colours = rev(terrain.colors(10)))
+
+#Repeat for peatland
+peatQ5<-ggplot(mapGCAMFile)+ 
+    #Using peatland fill
+    geom_sf(aes(fill=PeatQ5)) +
+    #The scale for this map is identical to the previous
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$MineralQ5),  max(mapGCAMFile$PeatQ5)), 
+    #The color scale also matches above
+    colours = rev(terrain.colors(10)))
+
+#Stack the two maps together using ggarrange
+ggarrange(
+    #Set the two maps in order
+    peatQ5, minQ5, 
+    #Create the Labels for both maps
+    labels = c("Peat 5th Percentile", "Mineral 5th Percentile"),
+    #Set the total number of columns and rows      
+    ncol = 1, nrow = 2, 
+    #Align the vertical axis (by longitude)
+    align = "v")
+
+```
+
+###### First Quartile (25th Percentile)
+
+```{r}
+#Detailed code description under 5th percentile
+peatQ1<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=MineralQ1)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$MineralQ1),  max(mapGCAMFile$PeatQ1)), colours = rev(terrain.colors(10)))
+
+minQ1<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=PeatQ1)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$MineralQ1),  max(mapGCAMFile$PeatQ1)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ1, minQ1, 
+          labels = c("Peat 25th Percentile", "Mineral 25th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Median
+
+```{r}
+
+#Detailed description under 5th percentile
+mineralMed<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=Mineralmedian)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$Mineralmedian),  max(mapGCAMFile$PeatMedian)), colours = rev(terrain.colors(10)))
+
+peatMed<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=PeatMedian)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$Mineralmedian),  max(mapGCAMFile$PeatMedian)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatMed, mineralMed, 
+          labels = c("Peat Median", "Mineral Median"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Third Quartile (75th Percentile)
+
+
+
+```{r}
+#Detailed code description under 5th percentile
+minQ3<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=MineralQ3)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$MineralQ3),  max(mapGCAMFile$PeatQ3)), colours = rev(terrain.colors(10)))
+
+peatQ3<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=PeatQ3)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$MineralQ3),  max(mapGCAMFile$PeatQ3)), colours = rev(terrain.colors(10)))
+
+ggarrange(peatQ3, minQ3, 
+          labels = c("Peat 75th Percentile", "Mineral 75th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+###### Ninety-Fifth Percentile
+
+The major noticeable trend is how peat carbon in New Guinea continued to increase, but the shared Island space with Indonesia did not have the same increase in the peatland soil carbon. The mineral soil carbon on this island also appears to be much higher than the rest of the world. Indicating potential issues in land use classification. 
+
+```{r}
+#Detailed code description under 5th percentile
+min95<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=MineralQ95)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$MineralQ95),  max(mapGCAMFile$Peat95)), colours = rev(terrain.colors(10)))
+
+peat95<-ggplot(mapGCAMFile)+ 
+    geom_sf(aes(fill=Peat95)) +
+    scale_fill_gradientn(limits = c(min(mapGCAMFile$MineralQ95),  max(mapGCAMFile$Peat95)), colours = rev(terrain.colors(10)))
+
+ggarrange(peat95, min95, 
+          labels = c("Peat 95th Percentile", "Mineral 95th Percentile"),
+          ncol = 1, nrow = 2, 
+          align = "v")
+
+```
+
+
+
+##### Scatter Plots
+
+```{r}
+#Creating the Scatter Plot by Color
+
+mapGCAMUp <- mapGCAMFile %>% 
+  #Use the mutate function to create a new column
+  #Cut splits the Percent peat by the breaks defined
+  mutate(category=cut(PerPeat, breaks=c(0,1.5,5,20),
+  #Add the column values for each breaks.
+  labels=c("low < 1.5%","middle","high: > 5%")))
+
+init<-ggscatter(mapGCAMUp, 
+    #Define the value for X (Peat Median value)
+    x = "PeatMedian", 
+    #Define the values for y (Minearl Median value) 
+    y = "Mineralmedian", 
+    #Use the category column to set the shapes and color
+    shape="category", color="category")+
+    #Utilize the geom_abline to create a 1:1 ratio line
+    geom_abline(intercept = 0, slope = 1)+
+    #Add the correlation values and their location label
+  stat_cor(method = "pearson", label.x = 3)
+
+#plot the function
+init
+```
+
+```{r results=TRUE}
+mapGCAMUp$ratio<-mapGCAMUp$PeatMedian / mapGCAMUp$Mineralmedian
+
+highGCAMRatio<-mapGCAMUp
+highGCAMRatio$geometry<-NULL
+
+highGCAMRatio<-highGCAMRatio %>%
+  dplyr::filter(!between(ratio, 0.495, 1.495))
+
+highGCAMTable<-highGCAMRatio %>% dplyr::select(basin_nm, reg_nm, category, TotmedianC, Mineralmedian, PeatMedian)
+
+hT<-highGCAMTable %>%
+  kbl(caption = "Basins that show Differences in Peat and Mineral Soil Via a Peat/Mineral Ratio", digits= 1, col.names = c("Basin Name", "Region Name", 
+                           "Category",
+                           "Total Median Soil Carbon",
+                           "Median Mineral Carbon",
+                           "Median Peat Carbon")) %>%
+  kable_styling(bootstrap_options = "striped")
+
+hT
+```
+
+
+```{r}
+
+
+sp <- ggscatter(mapGCAMUp, x = "PeatMedian", y = "Mineralmedian",
+                add = "reg.line",               # Add regression line
+                conf.int = TRUE,                # Add confidence interval
+                color = "category",  # Color by groups "cyl"
+                #shape = "category"                   # Change point shape by groups "cyl"
+                )+
+  stat_cor(aes(color = category), label.x = 3)       # Add correlation coefficient
+sp
+```
+
+##### Boxplots
+
+These box plots aggregate all of the basins together and show the median, and Interquartile Range.
+
+```{r}
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Boundaries")
+
+peatGCAMSoilsDB<-read_csv("peatSoilGCAMDB.csv")
+
+
+peatGCAMSoilsDB$IQR<- peatGCAMSoilsDB$Q3-peatGCAMSoilsDB$Q1
+peatGCAMSoilsDB$FivetoNinetyFiveRange<- peatGCAMSoilsDB$`95`-peatGCAMSoilsDB$Q5
+
+peatTypeOrder<- c("Peat", "Mineral", "Total")
+peatTypeColorOrder<- c("green", "red", "yellow")
+
+# Summary Stats for Globe-------------------
+
+ggplot(peatGCAMSoilsDB, aes(y= `Type`, x= Median))+geom_boxplot()
+```
+
+```{r}
+
+ggplot(peatGCAMSoilsDB, aes(y= `Type`, x= IQR))+geom_boxplot()
+
+```
+
+
+
+##### Dumbell Plots {.active}
+
+The dumbbell plots feature the 12 basins with the most peat. 
+
+###### South America
+
+
+```{r}
+
+#South America                              
+peatGCAM7168<-peatGCAMSoilsDB%>%filter(key== 7168)
+
+peatGCAM32168<-peatGCAMSoilsDB%>%filter(key== 32168)
+
+peatGCAM25168<-peatGCAMSoilsDB%>%filter(key== 25168)
+
+peatGCAM7161<-peatGCAMSoilsDB%>%filter(key== 7161)
+                            
+peatGCAM32156<-peatGCAMSoilsDB%>%filter(key== 32156)
+
+pSAGCAM1<-ggplot(peatGCAM7168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAGCAM2<-ggplot(peatGCAM32168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+
+  theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Amazon: SA Northern") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAGCAM3<-ggplot(peatGCAM25168)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Amazon: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAGCAM4<-ggplot(peatGCAM7161)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("NE SA South Atlantic Coast: Brazil") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSAGCAM5<-ggplot(peatGCAM32156)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 200))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Orinoco: Columbia") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSAGCAM1, pSAGCAM2, pSAGCAM3, pSAGCAM4, pSAGCAM5,
+          label.x = 0,
+          ncol = 2, nrow = 3, align = "v" )
+
+```
+
+###### Southeast Asia
+
+
+```{r}
+peatGCAM29159<-peatGCAMSoilsDB%>%filter(key== 29159) 
+
+peatGCAM29173<-peatGCAMSoilsDB%>%filter(key== 29173)
+
+peatGCAM29181<-peatGCAMSoilsDB%>%filter(key== 29181)
+
+pSEAGCAM1<-ggplot(peatGCAM29159)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("North Borneo Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEAGCAM2<-ggplot(peatGCAM29173)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Papua New Guinea Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pSEAGCAM3<-ggplot(peatGCAM29181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 650))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pSEAGCAM1, pSEAGCAM2, pSEAGCAM3,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+
+
+```
+
+###### Indonesia 
+
+Like the Fly in Southeast Asia, the Irian Jaya Coast has a huge range in mineral soils that does not exist in peatland. 
+
+```{r}
+
+#Indonesia                             
+peatGCAM18181<-peatGCAMSoilsDB%>%filter(key== 18181)
+peatGCAM18167<-peatGCAMSoilsDB%>%filter(key== 18167)
+peatGCAM18165<-peatGCAMSoilsDB%>%filter(key== 18165)
+peatGCAM18163<-peatGCAMSoilsDB%>%filter(key== 18163)
+
+
+pIndoGCAM1<-ggplot(peatGCAM18181)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none")+
+  ggtitle("Fly") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndoGCAM2<-ggplot(peatGCAM18167)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Irian Jaya Coast") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+pIndoGCAM3<-ggplot(peatGCAM18165)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Kalimantan") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+
+pIndoGCAM4<-ggplot(peatGCAM18163)+
+  geom_dumbbell(aes(y= `Type`, x=Min, xend= Max), color= "#adb5bd", size=1)+
+  geom_dumbbell(aes(y= `Type`, x=Q5, xend=`95`, color = factor(Type, levels=peatTypeOrder)), 
+                size=1.75)+scale_color_manual(values=peatTypeColorOrder)+
+  geom_point(aes(y= `Type`, x=Median), size=1.5, color = "red")+
+  geom_point(aes(y= `Type`, x=Q1), size=3, color = "blue", shape= "|")+
+  geom_point(aes(y= `Type`, x=Q3), size=3, color = "blue", shape= "|")+
+  scale_x_continuous(limits = c(0, 600))+
+  theme(axis.text.y= element_text(size= 10))+theme_minimal()+
+  theme(legend.position = "none") +
+  ggtitle("Sumatra") +
+  labs(x= "Soil Organic Carbon Stock, tC/ha")
+
+ggarrange(pIndoGCAM1, pIndoGCAM2, pIndoGCAM3, pIndoGCAM4,
+          label.x = 0,
+          ncol = 2, nrow = 2, align = "v" )
+```
+
+
+
+
+# Conclusions
+
+There are several potential issues this peatland analysis runs. 
+
+### Peatland shapefile:
+
+The Xu paper documents several of the issues with creating peatland shapefiles, especially tropical ones. Several of these remote areas are difficult to access, and we have to make estimates from aerial images and the limited surveys that we have access to. This is one of the first comprehensive maps of peatland for a reason. 
+
+### Soilgrids Data: 
+
+The maps show a potential issue with the SoilGrids data and potential peatland classification. The areas of the world that tropical peatland is important, also generally have more uncertainty and less soil sampling overall. They are difficult to get to, as tropical wetland jungles are difficult to transport teams through, and histic soils are also difficult to sample, especially if submerged for part or most of the year. The machine learning algorithms that soilgrids uses for estimates rely on taxonomy (from ground surveys, if possible), precipitation and climate, as well as topography. The algorithms for wetland soils are not robust.
+
+### Overall Conclusions: 
+When both of these issues are put together (the uncertainty in mapping peatlands, and the uncertainty in the soilgrids values), these two combine together to create:  
+- an overestimation in mineral carbon values in areas that SHOULD have wetlands, but don't from an incorrect shapefile.  
+- an underestimation of peatland soil carbon values that the soilgrids algorithm assumes are mineral, but the shapefile assumes are peatland.  
+- Since the global areas that peatland encompass is so small, there are very few basins that have a difference between mineral and peat soils, on the whole.
+
+There have been great forward strives to get better sampling in these regions, and these estimations are a good first step in understanding soil carbon dynamics.
+
+RECOMMENDATION: Replace the soil organic carbon stock values in the Xu et al., areas in the SoilGrids raster that we put into GCAM.
+

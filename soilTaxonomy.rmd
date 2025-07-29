@@ -1,0 +1,420 @@
+---
+title: "Variability on Soil Taxonomy"
+author: "Mandy Liesch"
+date: "2/4/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE)
+```
+
+## Introduction
+
+Adding spatially explicit information can provide an improve accuracy in integrated modelling. One of the largest sources of uncertainty in greenhouse gas modelling is the soil carbon stocks. Globally, there has been an effort to measure the amount of soil carbon, These spatially explicit errors have Understanding the sources of soil carbon stock uncertainty is critical for our model development processes. Preliminary analysis of the Lower Mississippi River basin showed high areas of soil carbon uncertainty near the coastal areas. From this, I decided to use derived soil taxonomic classification (and not land use) to determine, globally, if different categories of soils showed different levels of variation. 
+
+## Soil Grids 
+One of the largest efforts to predict soil properties is the [SoilGrids](https://www.isric.org/explore/soilgrids) project. This project uses the WoSIS database with over 230,000 data points, and up to 400 environmental covariates (climate, land cover and terrain morphology) to predict soil physical and chemical properties, including soil carbon. The first iteration of this 250 m dataset was released in 2017, with many improvements made to both prediction algorithms, and machine learning classifications. The 2020 [SoilGrids FAQ](https://www.isric.org/explore/soilgrids/faq-soilgrids) documents and answers common questions on how soil organic carbon stocks were calculated. 
+
+## Taxonomic Classification
+
+Details of USDA Taxonomic System is found in the [Keys to Soil Taxonomy](https://www.nrcs.usda.gov/Internet/FSE_DOCUMENTS/nrcs142p2_052172.pdf), with detailed breakdowns of descriptions and definitions. Soils are broken down into orders and suborders (and further). Based on initial definitions, 5 different soil categories (based on order or suborder), were selected for initial analysis.
+
+This is a documentation process on how to take the USDA taxonomic classification, and break them down into 5 total categories:  
+
+- 1: Histosol Soil Order    
+- 2: Aquic Soil Suborder 
+- 3: Humic Soil Suborder  
+- 4: Gelisol Soil Order  
+- 5: All Other Soil Suborder (including Gelic climate regime) 
+
+### Histosols
+Histosols is that of soils that are dominantly organic. They are commonly called bogs, moors, or peats and mucks. These soils DO NOT HAVE PERMAFROST. There are several soils in the Northern Latitidues that have lots of organic materials in them, but have permafrost. It is a general rule that a soil is classified as an organic soil (Histosol) if more than half of the upper 80 cm (32 in) of the soil is organic or if organic soil material of any thickness rests on rock or on fragmental material having interstices filled with organic materials. Detailed information deriving organic soils is on page 4 of the Soil Taxonomy Keys book. 
+
+There are four groups of Histosols that are in this category:  
+- Folits: Histosols that are not saturated with water for long periods of time during the year  
+- Fibrists: Histosols that are primarily made up of only slightly decomposed organic materials, often called peat.   
+- Hemists: Histosols that are primarily made up of moderately decomposed organic materials.    
+- Saprists: Histosols that are primarily made up of highly decomposed organic materials, often called muck.  
+
+### Aquic Soils
+Soils with aquic (L. aqua, water) conditions are those that currently undergo continuous or periodic saturation and reduction. The defining characteristic is characterized by redoximorphic features, except in Histosols and Histels, and can
+be verified by measuring saturation and reduction, except in artificially drained soils. Artificial drainage is defined here as the removal of free water from soils having aquic conditions by surface mounding, ditches, or subsurface tiles to the extent that water table levels are changed significantly in connection with specific types of land use. The duration of saturation required for creating aquic conditions varies, depending on the soil environment, and is not specified. Soils generally will have redoxomorphic concentrations, or depletions. Details about Aquic conditions not defined here are found on page 23-25.
+
+Another indicator of aquic soils is the presence of histic epipedons. These soils are not histosols, but have histic qualities (referred to as a histic epipedon). These are layers (one or more horizons) that are characterized by saturation (for 30 days or more, cumulative) and reduction for some time during normal years (or is artificially drained). They have a high level of organic carbon material (percent is based on clay content), of at least 8% by weight. These mineral histic epipedons *may* be in mollic or ochric epipedons as well.  Qualities are described on page 7 of the soil keys book. Depth considerations for both Histosols and Histic soils are on page 22. 
+
+Aquic soils happen all over the world, in most soil orders. They can have histic epipedons (defined above), OR Aquic Conditions. All of these soil orders (defined in Chapter 4, on page 31) are made up of soils with water tables at or near the soil surface for the entire year. 
+
+The major soil categories and the technical terms for the orders with Aquic soils with USDA definitions are:  
+- Spodosols (Aquods): Aquic features (page 251) within 50 cm of the mineral soil surface  
+- Andisols (Aquands): Aquic features (page 77) within 40 and 50 cm either from the mineral soil surface or from the top of an organic layer with andic soil properties  
+- Oxisols (Aquox): Aquic features (page 235) within 50 cm of the mineral soil surface   
+- Vertisols (Aquerts): Aquic features (page 283) within 50 cm from the soil surface  
+- Ultisols (Aquults): Aquic features (page 261) within 50 cm of the soil surface  
+- Mollisols (Aquolls): Aquic features (page 191) within 40 to 50 cm of the soil surface  
+- Alfisols (Aqualf): Aquic features (page 35) within 50 cm of the mineral soil surface  
+- Inceptisols (Aquepts): Aquic features (page 159) within 40 to 50 cm of the soil surface  
+- Entisols (Aquents): Aquic features (page 123) with variable depths suited  
+
+
+### Humic Soils
+These types of soils are soils with a lot of carbon, that are well drained. They exist in spodosols and ultisols, and are often found in coastal areas. Definitions for the two suborders are different, but both are well drained.
+
+Selected Suborders:  
+- Humods: Well-drained Spodosols that contain relatively large quantities of organic matter (6.0 percent or more organic carbon in a layer 10 cm or more thick within the spodic horizon.)  
+- Humults: Well-drained ultisols that have high organic matter content (12 kg/m2 or more organic carbon between the mineral soil surface and a depth of 100 cm.)  
+
+
+### Gelisols
+Gelisols have permafrost within 100 cm of the soil surface or Gelic materials (defined below) within 100 cm of the soil surface and permafrost within 200 cm of the soil surface. Extended definitions are on page 32. Permafrost is defined as soils that remains below 0C for 2 or more years consecutively. It can be dry, or cemented with ice, depending on the environmental conditions (page 25). 
+
+Gelic materials can be either organic OR mineral. They have evidence of frost churning (cryturbation) and/or ice segregation in the active layer (seasonal thaw layer) and/or the upper part of the permafrost. These soils have irregular or broken horizons, accumulations of organic matter on top of or within the permafrost. They often have ice lenses, vein ice, segregated ice crystals, or wedges. Due to freeze/thaw phenomena, these soils have a lot of physical volume change from water to ice. 
+
+All Gelisols were in this category (including Histic), classes Include:  
+- Histels: Organic Soils similar to histosols, with permafrost within 200 cm of the soil surface  
+- Turbels: Soils that show marked influence of cryoturbation (more than one-third of the depth of the active layer)  
+- Orthels: All other gelisols    
+
+
+### All Other Soils
+These soils are considered mineral soils (page 4). These soils are generally made up of sand, silt, and clay (less than 2.0 mm in diameter). Most soils are dominantly mineral material, but many mineral soils have horizons of organic material (like leaf litter). 
+
+
+## Data Sources
+- Soil Taxonomy: [USDA Soil Taxonomy Raster](https://www.isric.org/explore/soilgrids/faq-soilgrids-2017): The USDA suborder classification csv file are reclassified into categories defined above.  
+- Soil Grids: The [2020 Soil Grids](https://www.isric.org/explore/soilgrids) data for carbon stocks is available for the top 30 cm of soil at a 250 m resolution. The median value (Q0.5 was the one used for analysis. The uncertainty map was obtained using the [WebDAV VRT](https://files.isric.org/soilgrids/latest/data/ocs/) files.  
+- GCAM Basins: Loosly based on HUC 2 watersheds, the basins created run in the [GCAM Core](https://github.com/JGCRI/gcam-core)
+
+## Methods
+
+The processing information for transforming the soil carbon uncertainty raster into each of the five categories is listed below in a step-by-step guide.
+
+### Step 0: Requred Packages
+
+```{r}
+library(terra)
+library(tidyverse)
+library(raster)
+library(exactextractr)
+library(sp)
+library(rgdal)
+library(sf)
+library(tidyverse)
+library(ggplot2)
+library(ggalt) # for dumbbell plots
+library(ggpubr) # for adding stat annotation to ggplots
+```
+
+
+
+### Step 1: Taxonomy Transformation
+
+This process takes the five categories in the .csv file, and the USDA taxonomy raster, and reclassifies the raster to the text categories.
+
+```{r}
+#Load soil taxonomy raster
+
+raster <- rast("TAXOUSDA_250m_ll.tif")
+
+#read in the csv file for classification
+
+baseTable <-read_csv("TAXOUSDA_250m_ll.tif.csv")
+
+#Drop the group and Description from the tables
+baseTable$Group<-NULL
+baseTable$Description<-NULL
+
+#Simplify Taxonomy using reclassification
+tax_simple<-classify(raster, baseTable, othersNA=TRUE)
+
+#plot the new taxonomy raster with the five new categories.
+plot(tax_simple)
+
+
+```
+
+### Step 2: Reproject Rasters
+
+The soil rasters from soil grids are in the igh projections. So, the taxonomy rasters need to be transformed to match the soil grids output.
+
+```{r}
+#Load in the soil uncertainty raster
+uncertRast<-rast("ocs_30cm_uncert.tif")
+
+#plot the uncertainty raster
+plot(uncertRast)
+
+#Transform the projection of the soil taxonomy raster to match that of the uncertainty raster.
+project(tax_simple, uncertRast, method= "near", filename= "Reproj_SoilTax_igh.tif", overwrite=TRUE) # this command requires ~45 min
+
+```
+
+### Step 3: Create the Mask for all Five Categories
+
+Use all five categories with the taxonomy raster to create a binary (0/1) blank raster of each group, with the value as 1, and everything else as 0. For all files, a spatial output can be keyed in; however, due to processing time and large file sizes, the output can be used to set up a database.
+
+*NOTE* If processing speeds are a big issue, run everything from each step one category at a time (all histosols, followed by all aquic soils, etc.). This code is set to run everything consecutively. 
+
+```{r}
+# Step 3: Use Reprojected Rasters to create masks
+#Final Key for Soil Taxonomy
+
+#1 = Histosols
+#2 = Aquic Soils
+#3 = High Organic Matter/Well Drained
+#4 = Gelisols
+#5 = All Other Soils
+
+#Read in the new reprojected soil rasters from the previous step
+reproj_SoilTax<-rast("Reproj_SoilTax_igh.tif")
+
+# Create Soil Taxonomy Specific Masks from the Taxonomic Classification file-----------
+#Values
+## 1: Histisols---------------
+#classify a SpatRaster, with the all values but 1 (Histosol), reading as NA.
+HistMask<- classify(reproj_SoilTax, cbind(id=c(0, 1, 2, 3, 4, 5), 
+                                      v=c(NA, 1, NA, NA, NA, NA)))
+
+#Check your Histosol Raster
+plot(HistMask)
+#writeRaster(HistMask, "SoilTax_HistMask.tif")
+
+## 2: Aquic---------------
+#Repeat everything with Aquic Soils
+AquicMask<- classify(reproj_SoilTax, cbind(id=c(0, 1, 2, 3, 4, 5),
+                                        v=c(NA, NA, 1, NA, NA, NA)))
+
+#Check the Aquic Mask
+plot(AquicMask)
+#writeRaster(AquicMask, "SoilTax_AquicMask.tif")
+
+## 3: Histic Soils---------------
+#Repeat for Humic Soils
+UpHistMask<- classify(reproj_SoilTax, cbind(id=c(0, 1, 2, 3, 4, 5),
+                                       v=c(NA, NA, NA, 1, NA, NA)))
+#Plot Upland Histosols
+plot(UpHistMask)
+#writeRaster(UpHistMask, "SoilTax_UpHistMask.tif")
+
+## 4: Gelisols---------------
+#Repeat for Gelisols
+gelisolMask<- classify(reproj_SoilTax, cbind(id=c(0, 1, 2, 3, 4, 5),
+                                       v=c(NA, NA, NA, NA, 1, NA)))
+
+#Plot Gelisols
+plot(gelisolMask)
+#writeRaster(gelisolMask, "SoilTax_GelisolMask.tif")
+
+## 5: All Other Soils (Mineral and Gelic) Climate Regime---------------
+#Repeat for all other soils
+otherMask<- classify(reproj_SoilTax, cbind(id=c(0, 1, 2, 3, 4, 5),
+                                       v=c(NA, NA, NA, NA, NA, 1)))
+#Plot the all other soils raster space
+plot(otherMask)
+
+#writeRaster(gelicMask, "SoilTax_OtherMask.tif")
+```
+
+### Step 4: Apply the Mask
+
+Once the established SPAT Raster is calculated, 
+
+```{r}
+#Step 4: Taking the masked rasters to create these hydric level maps
+
+#In this method, I am not saving everything as a unique raster, due to processing spaces. 
+# Rather, I am working from memory spat rasters.
+
+# Create & Save Soil Organic Carbon Stock Error Rasters for with each Mask
+
+## 1. Histisols------------------------
+SOC_uncert_0.30cm_histisol<- mask(uncertRast, HistMask, 
+                           inverse = FALSE, updatevalue = NA, overwrite=TRUE,
+                           filename = "SOC_uncert_0.30cm_histisol.tif")
+
+## 2. Aquic Soils------------------------
+SOC_uncert_0.30cm_aquic<- mask(uncertRast, AquicMask, 
+                                  inverse = FALSE, updatevalue = NA, overwrite=TRUE,
+                                  filename = "SOC_uncert_0.30cm_aquic.tif")
+
+## 3. Histic Soils------------------------
+SOC_uncert_0.30cm_upHist<- mask(uncertRast, UpHistMask, 
+                               inverse = FALSE, updatevalue = NA, overwrite=TRUE,
+                               filename = "SOC_uncert_0.30cm_upHist.tif")
+
+## 4. Gelisols Soils------------------------
+SOC_uncert_0.30cm_gelic<- mask(uncertRast, gelisolMask, 
+                                inverse = FALSE, updatevalue = NA, overwrite=TRUE,
+                                filename = "SOC_uncert_0.30cm_gelic.tif")
+
+## 5. Other Soils 
+SOC_uncert_0.30cm_others<- mask(uncertRast, otherMask, 
+                               inverse = FALSE, updatevalue = NA, overwrite=TRUE,
+                               filename = "SOC_uncert_0.30cm_others.tif")
+```
+
+### Step 5: Extract the Zonal Statistic Values
+
+This step takes the Mask Maps to the GCAM watershed Models to calculate zonal statistics for each of the 5 watersheds. This step involves projecting the shapefile and transforming the GCAM basins area, then individually calculating all zonal statistics. This is done using exact_extract, then written to the shapefile. Once the shapefile has a new attribute table, the geometry is removed and the csv file is written for each of the five files.
+
+```{r}
+## Read in the shapefiles
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+st_crs(BasinShapeFile)
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+#Calculate the Actual Raster Area totally
+BasinShapeFile_igh$Area <- exact_extract(uncertRast, BasinShapeFile_igh, 'count')
+
+#Remove the Geometry
+BasinShapeFile_igh$geometry<-NULL
+
+#Create a csv file with area
+write.csv(BasinShapeFile_igh, "TotalArea.csv")
+
+
+# Histisols
+## Read in the raster
+CarbonUncertSoilRaster<- raster("SOC_uncert_0.30cm_histisol.tif")
+
+# Use Exact_Extract() to extract summary statistics of the CarbonSoilUncertRaster by each basin
+BasinShapeFile_igh$Area <- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$mean<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$minimum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$maximum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$mode<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mode')
+BasinShapeFile_igh$Five<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$Q1<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh,  fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$median<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles= 0.5)
+BasinShapeFile_igh$Q3<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$NinetyFive<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+
+library(dplyr)
+SoilGridSummaryStats<- BasinShapeFile_igh
+
+SoilGridSummaryStats$geometry<- NULL # remove geometry to enable this to be exported as a simple table. 
+SoilGridSummaryStats$SoilType<- "histisol"
+
+write.csv(SoilGridSummaryStats, "SoilDiff_0.30cm_sumstat_Basin_histisol.csv", row.names = FALSE)
+
+# Aquic Soils
+## Read in the raster
+CarbonUncertSoilRaster<- raster("SOC_uncert_0.30cm_aquic.tif")
+
+# Use Exact_Extract() to extract summary statistics of the CarbonSoilUncertRaster by each basin
+BasinShapeFile_igh$Area <- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$mean<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$minimum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$maximum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$mode<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mode')
+BasinShapeFile_igh$Five<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$Q1<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh,  fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$median<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles= 0.5)
+BasinShapeFile_igh$Q3<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$NinetyFive<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+
+
+library(dplyr)
+SoilGridSummaryStats<- BasinShapeFile_igh
+
+SoilGridSummaryStats$geometry<- NULL # remove geometry to enable this to be exported as a simple table. 
+SoilGridSummaryStats$SoilType<- "aquic"
+
+write.csv(SoilGridSummaryStats, "SoilDiff_0.30cm_sumstat_Basin_aquic.csv", row.names = FALSE)
+
+# Upland Histic Soils
+## Read in the raster
+CarbonUncertSoilRaster<- raster("SOC_uncert_0.30cm_upHist.tif")
+
+# Use Exact_Extract() to extract summary statistics of the CarbonSoilUncertRaster by each basin
+BasinShapeFile_igh$Area <- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$mean<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$minimum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$maximum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$mode<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mode')
+BasinShapeFile_igh$Five<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$Q1<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh,  fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$median<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles= 0.5)
+BasinShapeFile_igh$Q3<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$NinetyFive<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+#Calculate the Watershed Areas
+BasinShapeFile_igh$FullArea <- st_area(BasinShapeFile_igh)
+
+#Calculate the percentage area from the count (Area) column
+BasinShapeFile_igh$PerArea<-((BasinShapeFile_igh$Area*250*250)/BasinShapeFile_igh$FullArea)*100
+library(dplyr)
+SoilGridSummaryStats<- BasinShapeFile_igh
+
+SoilGridSummaryStats$geometry<- NULL # remove geometry to enable this to be exported as a simple table. 
+SoilGridSummaryStats$SoilType<- "humic"
+
+write.csv(SoilGridSummaryStats, "SoilDiff_0.30cm_sumstat_Basin_upHist.csv", row.names = FALSE)
+
+# Gelisol Soils
+## Read in the raster
+CarbonUncertSoilRaster<- raster("SOC_uncert_0.30cm_gelisols.tif")
+
+# Use Exact_Extract() to extract summary statistics of the CarbonSoilUncertRaster by each basin
+BasinShapeFile_igh$Area <- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$mean<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$minimum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$maximum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$mode<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mode')
+BasinShapeFile_igh$Five<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$Q1<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh,  fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$median<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles= 0.5)
+BasinShapeFile_igh$Q3<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$NinetyFive<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+#Calculate the Watershed Areas
+BasinShapeFile_igh$FullArea <- st_area(BasinShapeFile_igh)
+
+#Calculate the percentage area from the count (Area) column
+BasinShapeFile_igh$PerArea<-((BasinShapeFile_igh$Area*250*250)/BasinShapeFile_igh$FullArea)*100
+library(dplyr)
+SoilGridSummaryStats<- BasinShapeFile_igh
+
+SoilGridSummaryStats$geometry<- NULL # remove geometry to enable this to be exported as a simple table. 
+SoilGridSummaryStats$SoilType<- "gelisols"
+
+write.csv(SoilGridSummaryStats, "SoilDiff_0.30cm_sumstat_Basin_gelisols.csv", row.names = FALSE)
+# All Other Soils
+## Read in the raster
+CarbonUncertSoilRaster<- raster("SOC_uncert_0.30cm_others.tif")
+
+# Use Exact_Extract() to extract summary statistics of the CarbonSoilUncertRaster by each basin
+BasinShapeFile_igh$Area <- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'count')
+BasinShapeFile_igh$mean<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mean')
+BasinShapeFile_igh$minimum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'min')
+BasinShapeFile_igh$maximum<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'max')
+BasinShapeFile_igh$mode<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, 'mode')
+BasinShapeFile_igh$Five<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.05)
+BasinShapeFile_igh$Q1<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh,  fun='quantile', quantiles=0.25)
+BasinShapeFile_igh$median<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles= 0.5)
+BasinShapeFile_igh$Q3<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.75)
+BasinShapeFile_igh$NinetyFive<- exact_extract(CarbonUncertSoilRaster, BasinShapeFile_igh, fun='quantile', quantiles=0.95)
+
+#Calculate the Watershed Areas
+BasinShapeFile_igh$FullArea <- st_area(BasinShapeFile_igh)
+
+#Calculate the percentage area from the count (Area) column
+BasinShapeFile_igh$PerArea<-((BasinShapeFile_igh$Area*250*250)/BasinShapeFile_igh$FullArea)*100
+
+library(dplyr)
+SoilGridSummaryStats<- BasinShapeFile_igh
+
+SoilGridSummaryStats$geometry<- NULL # remove geometry to enable this to be exported as a simple table. 
+SoilGridSummaryStats$SoilType<- "others"
+
+write.csv(SoilGridSummaryStats, "SoilDiff_0.30cm_sumstat_Basin_others.csv", row.names = FALSE)
+
+
+```
+
+### Step 6: Combine all Files Together
+
+We generated 5 different hydric categories, now, we need to combine everything into one file. 

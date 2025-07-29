@@ -1,0 +1,85 @@
+---
+title: "GCAM Land carbon"
+author: "Kathe Todd-Brown <ktoddbrown@ufl.edu>"
+date: "2023-10-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+parameter.df <- tribble(~land_use, 
+                        ~soc_steadyState, ~veg_steadyState, 
+                        ~veg_matureAge, ~soil_matureAge,
+              'Cropland', 7.76, 0.3, 1, 50,
+              'Forest', 9.91, 7.72, 50, 50)
+
+
+inital_conditions <- parameter.df %>%
+  select(land_use, 
+         soil_carbon_stock = soc_steadyState, veg_carbon_stoc = veg_steadyState) %>%
+  mutate(year = 1)
+
+carbon_stocks <- tibble(year = 1:100) %>%
+  reframe(land_use = c('Cropland', 'Forest'), 
+          .by = year) %>%
+  mutate(land_area = case_when(land_use == 'Cropland' & year <= 5 ~ 28.59,
+                               land_use == 'Cropland' ~ 29.85,
+                               land_use == 'Forest' & year <=5 ~ 8.13,
+                               land_use == 'Forest' ~ 6.87),
+         elapsedTime = case_when(year <= 5 ~ year,
+                                 year < 10 ~ year - 5)) %>%
+  #full_join(inital_conditions, by = join_by(year, land_use)) %>% 
+  full_join(parameter.df, by = join_by(land_use))
+  
+ 
+
+ans <- carbon_stocks %>%
+  filter(year == 1) %>%
+  mutate(soil_carbon_mass = land_area * soc_steadyState,
+         veg_carbon_mass = land_area * veg_steadyState) 
+
+prior_year <- ans
+for(current_year in 2:100){
+  
+  new_land_area <- carbon_stocks %>%
+    filter(year == current_year) %>%
+    select(land_use, land_area)
+  
+  #current_year <- 2
+  temp <- prior_year %>% 
+    select(-land_area) %>%
+    full_join(new_land_area, by = join_by(land_use)) %>%
+    mutate(gap_veg = veg_steadyState * land_area - veg_carbon_mass,
+           gap_soc = soc_steadyState * land_area  - soil_carbon_mass) %>%
+    mutate(emissions_veg = if_else(gap_veg > 0, 
+                                   gap_veg ,
+                                   gap_veg * (
+                                     (1 - exp(-3 *( elapsedTime+1)/veg_matureAge)) -
+                                       (1 - exp(-3 *elapsedTime/veg_matureAge)))),
+           emissions_soil = gap_soc  * (
+                                     (1 - exp(-1 *elapsedTime/(soil_matureAge/10))) -
+                                       (1 - exp(-1 * (elapsedTime - 1) /(soil_matureAge/10))))) %>%
+    mutate(year = year + 1,
+           veg_carbon_mass = veg_carbon_mass - emissions_veg,
+           soil_carbon_mass = soil_carbon_mass - emissions_soil)
+  
+  prior_year <- temp
+  
+  ans <- ans %>%
+    bind_rows(temp)
+    
+}
+
+```
+
+```{r}
+ggplot(ans %>%
+         pivot_longer(c(veg_carbon_mass, soil_carbon_mass, land_area), names_to = 'variable')) +
+  geom_line(aes(x=year, y = value, color = land_use)) +
+  facet_wrap(~variable)
+```

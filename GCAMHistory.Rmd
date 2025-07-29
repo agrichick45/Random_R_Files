@@ -1,0 +1,91 @@
+---
+title: "GCAM Historic Land Use"
+output: html_document
+date: "2023-08-25"
+---
+
+# Load the dataframes for historic land use
+```{r}
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+
+#Add the land use history file
+L125_LC_bm2_R_LT_Yh_GLU <- read_csv("L125.LC_bm2_R_LT_Yh_GLU.csv")
+
+#Add the basin information
+GCAM_Basin_IDs <- read_csv("GCAM_Basin_IDs.csv")
+
+#Merge the two datasets together
+fullHistLU <- merge(GCAM_Basin_IDs, L125_LC_bm2_R_LT_Yh_GLU,  by.x = 'GLU_code', by.y = 'GLU', all = TRUE)
+
+fullHistLU <-na.omit(fullHistLU)
+
+altFullHist<-fullHistLU
+
+altFullHist$Land_Type<-ifelse(altFullHist$Land_Type == 'UnmanagedPasture', 'Pasture', altFullHist$Land_Type)
+
+altFullHist$Land_Type<-ifelse(altFullHist$Land_Type == 'UnmanagedForest', 'Forest', altFullHist$Land_Type)
+
+
+```
+
+```{r}
+#Sum all the land use types together globally by year
+
+sumTotal<-altFullHist %>%
+  group_by(year) %>%
+  summarize(sumTotal=sum(value))
+
+sumGlobe <- altFullHist %>%
+  group_by(Land_Type, year) %>%
+  summarize(sum=sum(value)) 
+
+#merge sumGlobe and SumTotal
+sumPer<-merge(sumGlobe, sumTotal, by='year', all=TRUE)
+
+sumPer$perGlobe<-sumPer$sum/sumPer$sumTotal
+
+ggplot(sumPer, aes(x=year, y=perGlobe, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")+
+  ggtitle("Global Historic Land Use")
+
+```
+
+```{r}
+#By Basin Comparisons 
+
+basinTotal<-altFullHist %>%
+  group_by(GCAM_Basin_Name, year) %>%
+  summarize(sumTotal=sum(value))
+
+sumBasin<- altFullHist %>%
+  group_by(GCAM_Basin_Name, GLU_code, Land_Type, year) %>%
+  summarize(sum=sum(value)) 
+
+BasinPer = merge(sumBasin, basinTotal, by.x=c("GCAM_Basin_Name", "year"), by.y=c("GCAM_Basin_Name", "year"), all=TRUE)
+
+BasinPer$perBasin<-BasinPer$sum/BasinPer$sumTotal
+
+```
+
+```{r}
+#Selecting Basins we want to see
+Missouri<-BasinPer %>%
+  subset(GCAM_Basin_Name=='Missouri_River_Basin')
+
+ggplot(Missouri, aes(x=year, y=sum, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black") +
+  ggtitle("Missouri River Basin: Historic Land Area") +
+  xlab("Year") + 
+  ylab("Area (Mha)")
+
+LaPlata<-BasinPer %>%
+  subset(GCAM_Basin_Name=='La_Plata')
+
+ggplot(LaPlata, aes(x=year, y=perBasin, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , size=1, colour="black")
+
+
+```

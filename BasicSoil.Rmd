@@ -1,0 +1,366 @@
+---
+title: "Basic soil carbon model"
+author: "Kathe Todd-Brown <ktoddbrown@ufl.edu>"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse) #data library
+library(deSolve) #ODE solver
+library(DiagrammeR) #flow charts
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# One pool model
+
+$\frac{dC}{dt} = u - C/\tau$
+
+```{r}
+ #u; [0.1, 4] kg-carbon m-2 yr-1;
+parameter.ls <- list(inputs = 1, 
+                     #\tau; [10, 35] yr
+                     turnoverTime = 15) 
+
+dCdt_1pool <- function(t, y, parms){
+  ans <- parms$inputs - y / parms$turnoverTime
+  return(list(ans))
+}
+
+C_ss_1pool <- function(parms){
+  ans <- parms$inputs * parms$turnoverTime
+  return(c(C = ans))
+}
+
+#dCdt_1pool(t=0, y = 10, parms = parameter.ls)
+#C_ss_1pool(parms = parameter.ls)
+
+sim_1pool <- lsoda(y = C_ss_1pool(parms = parameter.ls)*0.8,
+                times = 0:100,
+                func = dCdt_1pool,
+                parms = parameter.ls) %>%
+  as.data.frame() 
+
+ggplot(sim_1pool) +
+  geom_line(aes(x=time, y=C))
+```
+
+# Three pool model - Independent
+
+
+```{r}
+ #u; [0.1, 4] kg-carbon m-2 yr-1;
+#parameters.ls <- list(inputs = 1, turnoverTime = 15)
+
+parameter.ls <- c( parameter.ls, list( 
+                     input_to_fast = 0.6,
+                     input_to_slow = 0.3,
+                     #fast turnover \tau; [0, 10] yr
+                     turnoverTime_fast = 3,
+                     #slow turnover \tau; [10, 100] yr
+                     turnoverTime_slow = 40,
+                     #passive turnover \tau: [100, Inf] yr
+                     turnoverTime_passive = 500) )
+
+
+C_ss_3independent <- function(parms){
+  C_fast <- parms$inputs * 
+    parms$input_to_fast * 
+    parms$turnoverTime_fast
+  
+  C_slow <- parms$inputs * 
+    parms$input_to_slow * 
+    parms$turnoverTime_slow
+  
+  C_passive <- parms$inputs * 
+    (1-parms$input_to_fast - parms$input_to_slow) * 
+    parms$turnoverTime_passive
+  
+  return(c(C_fast = C_fast,
+           C_slow = C_slow,
+           C_passive = C_passive))
+}
+
+#C_ss_3independent(parms = parameter.ls)
+
+dCdt_3independent <- function(t, y, parms){
+  dC_fast <- parms$inputs *parms$input_to_fast -
+    y[1]/parms$turnoverTime_fast
+  
+  dC_slow <- parms$inputs * parms$input_to_slow - 
+    y[2]/parms$turnoverTime_slow
+  
+  dC_passive <- parms$inputs * 
+    (1-parms$input_to_fast - parms$input_to_slow) - 
+    y[3]/parms$turnoverTime_passive
+  
+  return(list(c(C_fast = dC_fast,
+           C_slow = dC_slow,
+           C_passive = dC_passive)))
+}
+
+
+#dCdt_3independent(t=0, y = c(1,3,5), parms = parameter.ls)
+
+
+sim_3independent <- lsoda(y = C_ss_3independent(parms = parameter.ls)*0.8,
+                times = 0:100,
+                func = dCdt_3independent,
+                parms = parameter.ls) %>%
+  as.data.frame() %>%
+  pivot_longer(cols = C_fast:C_passive,
+               names_to = 'pool',
+               values_to = 'stock')%>%
+  mutate(pool = factor(pool, levels = c('C_fast', 'C_slow', 'C_passive')),
+         model = '3independent')
+
+ggplot(sim_3independent) +
+  geom_line(aes(x=time, y=stock)) +
+  facet_wrap(~pool)
+```
+
+# Three pool model - Cascade 
+
+```{r}
+##1pool
+#parameters.ls <- list(inputs = 1, turnoverTime = 15)
+##3pool_independent
+# parameter.ls <- c( parameter.ls, list( 
+#                      input_to_fast = 0.6,
+#                      input_to_slow = 0.3,
+#                      #fast turnover \tau; [0, 10] yr
+#                      turnoverTime_fast = 5,
+#                      #slow turnover \tau; [10, 100] yr
+#                      turnoverTime_slow = 20,
+#                      #passive turnover \tau: [100, Inf] yr
+#                      turnoverTime_passive = 200) )
+parameter_independent <- c(parameter.ls, 
+                  list(fast_to_slow = 0,
+                     fast_to_passive = 0,
+                     slow_to_passive = 0)) 
+
+##3pool_cascade
+parameter.ls <- c(parameter.ls, 
+                  list(fast_to_slow = 0.2,
+                     fast_to_passive = 0.1,
+                     slow_to_passive = 0.3)) 
+
+
+C_ss_3cascade <- function(parms){
+  C_fast <- parms$inputs * 
+    parms$input_to_fast * 
+    parms$turnoverTime_fast
+  
+  C_slow <- (parms$inputs * parms$input_to_slow +
+               C_fast / parms$turnoverTime_fast * parms$fast_to_slow) *
+    parms$turnoverTime_slow
+  
+  C_passive <- (parms$inputs * (1-parms$input_to_fast - parms$input_to_slow) +
+      C_fast / parms$turnoverTime_fast * parms$fast_to_passive +
+      C_slow / parms$turnoverTime_slow * parms$slow_to_passive )* 
+    parms$turnoverTime_passive
+  
+  return(c(C_fast = C_fast,
+           C_slow = C_slow,
+           C_passive = C_passive))
+}
+
+if(all(C_ss_3independent(parms = parameter.ls) == 
+       C_ss_3cascade(parms = parameter_independent))){
+  print('cross check with C_ss independent and cascade works')
+}else{
+  print('problem with C_ss cascade steady state check')
+}
+
+C_init <- C_ss_3cascade(parms = parameter_independent)
+
+dCdt_3cascade <- function(t, y, parms){
+  dC_fast <- (parms$inputs *parms$input_to_fast) -
+    y[1]/parms$turnoverTime_fast
+  
+  dC_slow <- (parms$inputs * parms$input_to_slow +
+                y[1] / parms$turnoverTime_fast * parms$fast_to_slow)- 
+    y[2]/parms$turnoverTime_slow
+  
+  dC_passive <- (parms$inputs * (1-parms$input_to_fast - parms$input_to_slow) +
+                   y[1] / parms$turnoverTime_fast * parms$fast_to_passive +
+                   y[2] / parms$turnoverTime_slow * parms$slow_to_passive ) - 
+    y[3]/parms$turnoverTime_passive
+  
+  return(list(c(C_fast = dC_fast,
+           C_slow = dC_slow,
+           C_passive = dC_passive)))
+}
+
+if(all(dCdt_3independent(t=0, y = C_init,parms = parameter.ls)[[1]] ==
+       dCdt_3cascade(t=0, y = C_init,parms = parameter_independent)[[1]])){
+  print('cross check with dCdt independent and cascade works')
+}else{
+  print('problem with dCdt cascade steady state check')
+}
+
+#dCdt_3cascade(t=0, y = C_init, parms = parameter.ls)
+
+
+sim_3cascade <- lsoda(y = C_ss_3cascade(parms = parameter.ls) *0.8,
+                      times = 0:100,
+                      func = dCdt_3cascade,
+                      parms = parameter.ls) %>%
+  as.data.frame() %>%
+  pivot_longer(cols = C_fast:C_passive,
+               names_to = 'pool',
+               values_to = 'stock')%>%
+  mutate(pool = factor(pool, levels = c('C_fast', 'C_slow', 'C_passive')),
+         model = '3cascade')
+
+ggplot(sim_3cascade %>%
+         bind_rows(sim_3independent)) +
+ geom_line(aes(x=time, y=stock, color = model)) +
+  facet_wrap(~ pool)
+```
+
+
+
+# Three pool model - Feedback 
+
+```{r}
+##1pool
+#parameters.ls <- list(inputs = 1, turnoverTime = 15)
+##3pool_independent
+# parameter.ls <- c( parameter.ls, list( 
+#                      input_to_fast = 0.6,
+#                      input_to_slow = 0.3,
+#                      #fast turnover \tau; [0, 10] yr
+#                      turnoverTime_fast = 5,
+#                      #slow turnover \tau; [10, 100] yr
+#                      turnoverTime_slow = 20,
+#                      #passive turnover \tau: [100, Inf] yr
+#                      turnoverTime_passive = 200) )
+##3pool_cascade
+# parameter.ls <- c(parameter.ls, 
+#                   list(fast_to_slow = 0.2,
+#                      fast_to_passive = 0.1,
+#                      slow_to_passive = 0.2)) 
+
+parameter_independent <- c(parameter_independent,
+                  list(passive_to_fast = 0,
+                       passive_to_slow = 0,
+                       slow_to_fast = 0
+                       ))
+
+parameter_cascade <- c(parameter.ls,
+                       list(passive_to_fast = 0,
+                            passive_to_slow = 0,
+                            slow_to_fast = 0
+                       ))
+
+##3pool_feedback
+parameter.ls <- c(parameter.ls,
+                  list(passive_to_fast = 0.01,
+                       passive_to_slow = 0.02,
+                       slow_to_fast = 0.03
+                       ))
+
+
+
+C_ss_3feedback <- function(parms){
+  allocation_matrix <- matrix(c(parms$input_to_fast, 
+                                parms$input_to_slow, 
+                                1 - parms$input_to_fast - parms$input_to_slow),
+                              nrow = 3)
+  decay_matrix <- diag(x= 1/c(parms$turnoverTime_fast,
+                             parms$turnoverTime_slow,
+                             parms$turnoverTime_passive))
+  transfer_matrix <- matrix(c(-1,  parms$slow_to_fast, parms$passive_to_fast,
+                              parms$fast_to_slow, -1, parms$passive_to_slow,
+                              parms$fast_to_passive, parms$slow_to_passive,  -1),
+                            nrow = 3,
+                            byrow=TRUE)
+  #0 = inputs * allocation + transfer_matrix %*% decay_matrix %*% y
+  #decay_matrix %*% transfer_matrix %*% y = - inputs * allocation
+  
+  ans <- solve(transfer_matrix  %*% decay_matrix ,  -parms$inputs * allocation_matrix)
+  
+  return(c(C_fast = ans[1],
+           C_slow = ans[2],
+           C_passive = ans[3]))
+}
+
+if(all(abs(C_ss_3feedback(parms = parameter_independent) -
+       C_ss_3independent(parms = parameter.ls) ) < 1e-8)){
+  print('steady state within tolerance for independent check')
+}else{
+  print('steady state for independent parameterization does not match')
+}
+
+if(all(abs(C_ss_3feedback(parms = parameter_cascade) -
+       C_ss_3cascade(parms = parameter.ls))  < 1e-8)){
+  print('steady state within tolerance for cascade check')
+}else{
+  print('steady state for cascade parameterization does not match')
+}
+
+dCdt_3feedback <- function(t, y, parms){
+  pools <- matrix(y, nrow=3)
+ allocation_matrix <- matrix(c(parms$input_to_fast, 
+                                parms$input_to_slow, 
+                                1 - parms$input_to_fast - parms$input_to_slow),
+                              nrow = 3)
+  decay_matrix <- diag(x= 1/c(parms$turnoverTime_fast,
+                             parms$turnoverTime_slow,
+                             parms$turnoverTime_passive))
+  transfer_matrix <- matrix(c(-1,  parms$slow_to_fast, parms$passive_to_fast,
+                              parms$fast_to_slow, -1, parms$passive_to_slow,
+                              parms$fast_to_passive, parms$slow_to_passive,  -1),
+                            nrow = 3,
+                            byrow=TRUE)
+  #dcdt = inputs * allocation + transfer_matrix %*% decay_matrix %*% y
+  #decay_matrix %*% transfer_matrix %*% y = - inputs * allocation
+  
+  ans <- parms$inputs * allocation_matrix + transfer_matrix %*% decay_matrix %*% y
+  
+  return(list(c(C_fast = ans[1],
+           C_slow = ans[2],
+           C_passive = ans[3])))
+}
+
+C_init <- C_ss_3independent(parms = parameter_independent)
+if(all(abs(dCdt_3feedback(t = 0, y = C_init, parms = parameter_independent)[[1]] -
+       dCdt_3independent(t = 0, y = C_init,parms = parameter_independent)[[1]] ) < 1e-8)){
+  print('rate change within tolerance for independent check')
+}else{
+  print('rate change for independent parameterization does not match')
+}
+
+C_init <- C_ss_3cascade(parms = parameter_independent)
+if(all(abs(dCdt_3cascade(t = 0, y = C_init, parms = parameter_cascade)[[1]] -
+        dCdt_3feedback(t = 0, y = C_init, parms = parameter_cascade)[[1]])  < 1e-8)){
+  print('rate change within tolerance for cascade check')
+}else{
+  print('rate change for cascade parameterization does not match')
+}
+
+sim_3feedback <- lsoda(y = C_ss_3feedback(parms = parameter.ls)*0.8,
+                      times = 0:100,
+                      func = dCdt_3feedback,
+                      parms = parameter.ls) %>%
+  as.data.frame() %>%
+  pivot_longer(cols = C_fast:C_passive,
+               names_to = 'pool',
+               values_to = 'stock')%>%
+  mutate(pool = factor(pool, levels = c('C_fast', 'C_slow', 'C_passive')),
+         model = '3feedback')
+
+ggplot(sim_3feedback %>%
+         bind_rows(sim_3cascade, sim_3independent)) +
+  geom_line(aes(x=time, y=stock, color = model)) +
+  facet_wrap(~ pool)
+
+```
+
+
+

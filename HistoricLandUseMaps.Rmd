@@ -1,0 +1,177 @@
+---
+title: "Historic Land Use"
+output: html_document
+date: "2023-01-11"
+---
+
+```{r}
+library(terra)
+library(tidyverse)
+library(tidyterra)
+
+
+```
+
+Values we Use with GCAM
+1: Cropland
+2: Forest
+3: Grassland
+4: Shrubland
+5: Urban Land
+6: RID
+7: Tundra
+8: Pasture
+
+Values used with this HYDE 3.2 Anthropocine project, and their equivalent classification:
+
+"11 Urban" - Urban
+"12 Dense settlements" - Urban
+
+"21 Village, Rice" crop
+"22 Village, Irrigated" crop 
+"23 Village, Rainfed" crop
+"24 Village, Pastoral" -Pasture
+
+"31 Croplands, residential irrigated" - Crop
+"32 Croplands, residential rainfed" - Crop
+"33 Croplands, populated" - Crop 
+"34 Croplands, pastoral" - Pasture
+
+"41 Rangeland, residential" - Pasture
+"42 Rangeland, populated" - grassland
+"43 Rangeland, remote" - grassland
+
+"51 Semi-natural woodlands, residential"  -forest
+"52 Semi-natural woodlands, populated" - forest
+"53 Semi-natural woodlands, remote" - forest
+"54 Semi-natural treeless and barren lands" - grassland
+
+"61 Wild, remote - woodlands"  forest
+"62 Wild, remote - treeless & barren" RID
+"63 Wild, remote - ice" - RID
+
+"70 No definition"
+
+```{r}
+#Set the working directory
+workingDir<-"C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters/Historic Land Use"
+setwd(workingDir)
+
+#Get all filenames with a .asc pattern
+filenames <- list.files(workingDir, pattern="*.asc")
+
+
+map <- function(index) {
+  #Dial up the index valute
+  year<-rast(filenames[index])
+  RastUrban <- ifel(year == 11|year==12, 5, year)
+  RastRID <- ifel(year == 62|year==63, 6, RastUrban)
+  RastGrassland<- ifel(year == 54|year==42|year == 43, 3, RastRID)
+  RastPasture<- ifel(year == 24|year==34|year==41, 8, RastGrassland)
+  #RastShrub <- ifel(year == 43, 4, RastPasture)
+  RastForest <- ifel(year == 61|year ==51|year == 52|year == 53, 2, RastPasture)
+  RastCrop <- ifel(year== 21|year== 22|year== 23|year== 31|year== 32|year== 33, 1, RastForest)
+  #Recolor the raster
+  colors<-c("#fed976", "#00441b", "#c7e9c0", "#e41a1c", "#f0f0f0", "#9ecae1", "#41ab5d")
+  #Reproject the Raster to igh
+  #Load Tundra
+  tundra<-rast("tundraProj.tif")
+  RastTundra<-ifel(tundra == 1, 7, RastCrop)
+  factTundra<-as.factor(RastTundra)
+  years<-filenames[index]
+  sub1<-str_sub(years, 10, -5)
+  return(factTundra)
+}
+
+raster_output<-list()
+
+index<-1:12
+
+for (i in index){
+  r<-map(i)
+  raster_output[[i]]<-r
+  }
+
+
+
+
+
+
+
+
+
+```
+
+
+```{r}
+
+Rast1700<-rast("anthromes1700AD.asc")
+
+plot(Rast1700)
+
+LUR<-rast("Reprojected_LandUseRaster_igh.tif")
+
+LURRast<-terra::project(Rast1700, LUR)
+
+
+
+#Determine reclassification process
+
+RastUrban <- ifel(Rast1700 == 11|Rast1700==12, 5, Rast1700)
+plot(RastUrban)
+
+RastRID <- ifel(Rast1700 == 62|Rast1700==63, 6, RastUrban)
+
+RastGrassland<- ifel(Rast1700 == 54|Rast1700==42, 3, RastRID)
+
+RastPasture<- ifel(Rast1700 == 24|Rast1700==34|Rast1700==41, 8, RastGrassland)
+
+RastShrub <- ifel(Rast1700 == 43, 4, RastPasture)
+
+RastForest <- ifel(Rast1700 == 61|Rast1700 ==51|Rast1700 == 52|Rast1700 == 53, 2, RastShrub)
+
+RastCrop <- ifel(Rast1700== 21|Rast1700== 22|Rast1700== 23|Rast1700== 31|Rast1700== 32|Rast1700== 33, 1, RastForest)
+
+LU1700<-RastCrop
+
+colors<-c("#fed976", "#4daf4a", "#b2df8a", "#fdbf6f", "#e41a1c", "#f0f0f0", "#9ecae1", "#74c476")
+plot(LU1700, col=colors)
+
+tundra<-rast("tundraProj.tif")
+
+RastTundra<-ifel(tundra == 1, 7, RastCrop)
+
+
+Rast26<-ifel(LandUse == 26, NA)
+
+breaks<-c(0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5)
+stringer<-"anthromes1700AD.asc"
+str_split(stringer, "s")
+title<-str_sub(stringer, 10, -5)
+
+plot(RastTundra)
+
+fact<-as.factor(RastTundra)
+
+LU1700<-terra::project(RastTundra, LUR)
+
+
+```
+
+```{r}
+
+
+
+
+
+writeRaster(LU1700, "Recreations/LU1700.tif")
+
+writeRaster(LU1800, "Recreations/LU1800.tif")
+
+plot1800<-map(3)
+
+plot1900<-map(5)
+
+plot2000<-map(7)
+
+```

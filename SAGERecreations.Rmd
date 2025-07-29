@@ -1,0 +1,186 @@
+---
+title: "SageInitialVegetation"
+author: "Mandy Liesch"
+date: "2023-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load the SAGE .bil Raster
+
+
+
+```{r cars}
+
+
+require(raster)
+require(rgdal)
+library(terra)
+library(tidyverse)
+library(tidyterra)
+
+```
+
+## Recode the SAGE Raster to GCAM Land Use
+
+No cropland, pasture, or urban land... ok for this one, as we are using this to calculate the Missouri and Upper Mississippi River Basin
+
+
+```{r pressure, echo=FALSE}
+
+workingDir<- "~/soilrastercomparison"
+
+setwd(workingDir)
+
+# call Land Use Raster in igh projection (LURigh)
+LURigh<- rast("rasters/Reprojected_LandUseRaster_igh.tif") #this calls the previously re-projected land use raster in igh
+
+setwd("~/Moirai Data")
+
+sageRast<-rast('potveg_plus.bil')
+
+refVegArea<-rast("refveg_area_carbon.bil")
+
+refvegCarbon<-rast("refveg_carbon_thematic.bil")
+
+sage_Rast<-terra::project(sageRast, LURigh)
+
+
+
+RastForest<-ifel(sageRast ==1|sageRast==2|sageRast==3|sageRast==4|sageRast==5|sageRast==6|sageRast==7|sageRast==8, 2, sageRast)
+RastGrassland<-ifel(sageRast==9|sageRast==10, 3, RastForest)
+RastShrub<-ifel(sageRast==11|sageRast==12, 4, RastGrassland)
+RastTundra<-ifel(sageRast==13, 7, RastShrub)
+RastRID <- ifel(sageRast == 14|sageRast==15, 6, RastTundra)
+
+SAGE_NLU<-RastRID
+
+Sage_int<-as.int(sAGE_NLU)
+
+colors<-c("#00441b", "#c7e9c0", "#D8A631", "#f0f0f0", "#9ecae1" )
+
+
+
+```
+
+
+```{r}
+workingDir<- "~/soilrastercomparison"
+
+setwd(workingDir)
+
+# call Land Use Raster in igh projection (LURigh)
+LURigh<- rast("rasters/Reprojected_LandUseRaster_igh.tif") #this calls the previously re-projected land use raster in igh
+
+SAGE_NLU_igh<-terra::project(SAGE_NLU, LURigh)
+
+
+```
+
+## Read in Basins
+
+```{r}
+
+#Change Directory to Read in the Basin Shapefile
+BasinShapeFile<-st_read("Basin Polygons_NEW/reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+st_crs(BasinShapeFile)
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+
+```
+
+## Clip to the Missouri River Extent
+```{r}
+
+GCAM<-rast("rasters/GCAM0_30cm.tif")
+
+HWSD30cm<-rast("rasters/HWSDa_top.tif")
+
+FAOGlosis<-rast("rasters/Reproject_FAO_30cm.tif")
+
+
+SoilGrids2017<-rast("rasters/SG2017_0_30cm_Reproj.tif")
+
+
+SoilGrids2020<-rast("rasters/SoilGrids2020_0-30.tif")
+
+meanPotenHWSD<-rast("rasters/meanPotenHWSD.tif")
+
+soilPot<-meanPotenHWSD*10
+
+```
+
+
+```{r}
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters/Historic Land Use/Recreations")
+
+
+LU1700<-rast("LU1700.tif")
+
+LU1700_NE<-crop(LU1700, NE_igh_buff)
+
+#54 and 62 are the only land use types in Nebraska.
+
+LU1700_NE_SOC<-ifel(LU1700_NE==54, 126, LU1700_NE)
+69
+LU1700_NE_SC<-ifel(LU1700_NE_SOC==62, 69, LU1700_NE_SOC)
+
+#Convert to 30 cm depth
+
+LU1700_SOC_30cm_est<-LU1700_NE_SC*HWSD_NE
+
+
+plot(LU1700_SOC_30cm_est)
+plot(NE_igh, col="transparent", add=TRUE)
+
+#Convert to 30 cm depth
+
+
+LU1700_SOC_30cm_est<-LU1700_NE_SC*HWSD_NE
+
+
+plot(LU1700_SOC_30cm_est)
+plot(NE_igh, col="transparent", add=TRUE)
+
+#54 and 62 are the only land use types in Nebraska.
+
+SG17Q3_LU1700_NE_SOC<-ifel(LU1700_NE==54, 79, LU1700_NE)
+
+SG17_Q3_LU1700_NE_SOC<-ifel(LU1700_NE==62, 73, SG17Q3_LU1700_NE_SOC)
+
+plot(SG17_Q3_LU1700_NE_SOC)
+plot(NE_igh, col="transparent", add=TRUE)
+
+#No Land Use Change from Sanderman et al.
+
+noLUC<-rast("rasters/reprojNoLUC.tif")
+noLUC_NE<-crop(noLUC, NE_igh_buff)
+plot(noLUC_NE)
+plot(NE_igh, col="transparent", add=TRUE)
+
+
+
+```
+
+
+```{r}
+
+
+plot(soilPot_NE, main="Calculated Soil Carbon Potential")
+plot(NE_igh, col="transparent", add=TRUE)
+
+frame$exSP_NE <- extract(soilPot_NE, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$exHWSD_NE <- extract(HWSD_NE, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$exFAO_NE <- extract(FAO_NE, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$exGCAM_NE <- extract(GCAM_NE, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$exSG17_NE <- extract(SG17_NE, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$exSG20_NE <- extract(SG20_NE, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$exLU1700_WHD <- extract(LU1700_SOC_30cm_est, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$exLU1700_SG17Q3<- extract(SG17_Q3_LU1700_NE_SOC, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+frame$noLUC_NE<- extract(noLUC_NE, NE_igh, fun=sum, na.rm=TRUE, df=TRUE)
+
+```

@@ -1,0 +1,95 @@
+---
+title: "Land Use Change and Carbon"
+author: "Mandy Liesch"
+date: "5/17/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(biscale)
+library(cowplot)
+library(exactextractr)
+library(gdalUtils)
+library(geodata)
+library(ggplot2)
+library(ggridges)
+library(rgdal)
+library(rmarkdown)
+library(sf)
+library(terra)
+library(tidyverse)
+
+terraOptions(tempdir="C:\Users\aliesch\OneDrive - Environmental Protection Agency (EPA)\Desktop\processing")
+
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+#Use the dplyr package and the tidyverse notation to create the polygons to dissolve into. 
+
+Basin.ID <- BasinShapeFile_igh %>% 
+    group_by(basin_id, basin_nm) %>%
+    summarise() 
+    
+scStock<-rast("GlobalCarbonSoilRaster_SoilGrid_2021.04.12.tif")
+
+plot(scStock)
+plot(Basin.ID, col=NA, add=TRUE)
+
+cropGain<-rast("Global_cropland_3km_netgain.tif")
+
+project(cropGain, scStock, filename="Reproj_cropGain.tif")
+
+gains<-rast("Reproj_cropGain.tif")
+
+shapes <- sf::st_as_sf(Basin.ID)
+shapes$TotalCount<-exact_extract(scStock, shapes, 'count')
+shapes$totC_Mean<-exact_extract(scStock, shapes, 'mean')
+shapes$cropGains_Mean<-exact_extract(gains, shapes, 'mean')
+
+summary<-na.omit(shapes) 
+summary$geometry<-NULL
+
+
+sumStats <- summary %>%
+  group_by(basin_nm) %>%
+  summarise_at(vars(totC_Mean, cropGains_Mean), list(name = mean))
+
+
+shape<-na.omit(shapes) 
+
+shape <- bi_class(shape, x = cropGains_Mean, y = totC_Mean, style = "jenks", dim = 3)
+
+
+
+map <- ggplot() +
+  geom_sf(data = shape, mapping = aes(fill = bi_class), color = "white", size = 0.1, show.legend = FALSE) +
+  bi_scale_fill(pal = "DkBlue", dim = 3) +
+  labs(
+    title = "Cropland Gains and 30 cm Carbon Stocks",
+  ) +
+  bi_theme()
+
+legend <- bi_legend(pal = "DkBlue",
+                    dim = 3,
+                    xlab = "Cropland Gain",
+                    ylab = "Carbon Stocks",
+                    size = 12)
+
+finalPlot <- ggdraw() +
+  draw_plot(map, 0, 0, 1, 1) +
+  draw_plot(legend, 0, 0.2, 0.2, 0.2)
+
+
+finalPlot
+
+```

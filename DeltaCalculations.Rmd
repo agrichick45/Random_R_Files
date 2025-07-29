@@ -1,0 +1,71 @@
+---
+title: "Deltas"
+output: html_document
+date: "2023-09-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+So, building off the previous code, changing visuals for the changes off the reference point, we are going to take these datasets and compare future values of the corn and soy shocks to the reference sets. 
+
+#Create the database
+```{r}
+#Using the Final database from before, rename columns and merge them together
+FinalRef <- FinalRef %>%
+  rename(RefMha = Mha)
+
+FinalCorn <- FinalCorn %>%
+  rename(CornMha = Mha)
+
+FinalSoy <- FinalSoy %>%
+  rename(SoyMha = Mha)
+
+#Merge the databases
+Final1 <-merge(FinalRef, FinalCorn, all=TRUE)
+
+Final <-merge(Final1, FinalSoy, all=TRUE)
+
+#Calculate the Deltas
+Final$DeltaCorn<-Final$CornMha-Final$RefMha
+Final$DeltaSoy<-Final$SoyMha-Final$RefMha
+Final$year<-as.numeric(Final$year)
+
+#Sum all the basins together
+
+Sums <- Final %>% 
+  group_by(GCAM_Basin_Name, GLU_code, Land_Type, year) %>% 
+  summarize(refSum=sum(RefMha), deltaCornSum=sum(DeltaCorn), deltaSoySum=sum(DeltaSoy))
+
+
+yearBase<-Sums %>%
+ filter(year==2010)
+
+yearBase$totalRef<-yearBase$refSum
+
+yearBase<- yearBase %>%
+  select(GCAM_Basin_Name, GLU_code, Land_Type, totalRef)
+
+SumData<-merge(Sums, yearBase, all=TRUE)
+
+SumData$refDiff<-SumData$refSum-SumData$totalRef
+
+```
+
+
+```{r}
+
+
+MissouriDelta<-SumData %>%
+  subset(GCAM_Basin_Name=='Missouri_River_Basin')
+
+ggplot(MissouriDelta, aes(x=year, y=refDiff, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , linewidth=1, colour="black")
+
+ggplot(MissouriDelta, aes(x=year, y=deltaSoySum, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , linewidth=1, colour="black")
+
+ggplot(MissouriDelta, aes(x=year, y=deltaCornSum, fill=Land_Type)) + 
+    geom_area(alpha=0.6 , linewidth=1, colour="black")
+

@@ -1,0 +1,191 @@
+---
+title: "netCDF HWSD"
+author: "Mandy Liesch"
+date: "8/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(ncdf4)
+library(raster)
+library(rgdal) # package for geospatial analysis
+library(ggplot2) # package for plotting
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/HWSD_1247/data")
+
+nc_data <- nc_open('T_C.nc4')
+# Save the print(nc) dump to a text file
+{
+    sink('T_C.txt')
+ print(nc_data)
+    sink()
+}
+
+lon <- ncvar_get(nc_data, "lon")
+lat <- ncvar_get(nc_data, "lat", verbose = F)
+t <- ncvar_get(nc_data, "t_c")
+
+fillvalue <- ncatt_get(nc_data, "t_c", "_FillValue")
+
+
+nc_close(nc_data) 
+
+t[t == fillvalue$value] <- NA
+
+r <- raster(t, xmn=min(lat), xmx=max(lat), ymn=min(lon), ymx=max(lon), crs=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"))
+
+
+rr<-t(flip(r, 1))
+
+
+
+tCha<-rr*10
+
+writeRaster(tCha, "HWSD_1.tif", "GTiff", overwrite=TRUE)
+
+HWSD30cm<-rast("HWSD_1.tif")
+
+crs(HWSD30cm)<-"+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilC<-rast("GlobalCarbonSoilRaster_SoilGrid_2021.04.12.tif")
+
+plot(soilC)
+
+terra::project(HWSD30cm, soilC, filename='HWSD_Topsoil_Reproj.tif')
+
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/HWSD_1247/data")
+
+nc_data <- nc_open('S_C.nc4')
+# Save the print(nc) dump to a text file
+{
+    sink('S_C.txt')
+ print(nc_data)
+    sink()
+}
+
+lon <- ncvar_get(nc_data, "lon")
+lat <- ncvar_get(nc_data, "lat", verbose = F)
+t <- ncvar_get(nc_data, "s_c")
+
+fillvalue <- ncatt_get(nc_data, "s_c", "_FillValue")
+
+
+nc_close(nc_data) 
+
+t[t == fillvalue$value] <- NA
+
+r <- raster(t, xmn=min(lat), xmx=max(lat), ymn=min(lon), ymx=max(lon), crs=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"))
+
+
+rr<-t(flip(r, 1))
+
+
+
+tCha<-rr*10
+
+writeRaster(tCha, "HWSD_sub.tif", "GTiff", overwrite=TRUE)
+
+HWSDSubcm<-rast("HWSD_sub.tif")
+
+crs(HWSDSubcm)<-"+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters")
+
+soilC<-rast("GlobalCarbonSoilRaster_SoilGrid_2021.04.12.tif")
+
+plot(soilC)
+
+terra::project(HWSDSubcm, soilC, filename='HWSD_Subsoil_Reproj.tif')
+
+
+
+```
+
+
+```{r}
+subHWSD<-rast('HWSD_Subsoil_Reproj.tif')
+surfHWSD<-rast('HWSD_Topsoil_Reproj.tif')
+HWSD100cm<-subHWSD+surfHWSD
+
+tmpFiles(current=FALSE, orphan=TRUE, old=TRUE, remove=TRUE)
+
+writeraster(HWSD100cm, "HWSD100cm.tif")
+HWSD100cm<-rast("HWSD100cm.tif")
+
+ratioHWSDSurf<-surfHWSD/HWSD100cm
+
+terraOptions(tempdir = "C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/temp")
+
+writeRaster(ratioHWSDSurf, filename = "ratioHWSD.tif")
+
+ratioHWSD<-rast("ratioHWSD.tif")
+
+SG_17_30cm<-rast("SG2017stocks30cm.tif")
+SG_17_100cm<-rast("OCSTHA_M_100cm_250m_ll.tif")
+ratioSG2017<-SG_17_30cm/SG_17_100cm
+
+writeRaster(ratioSG2017, filename = "ratioSG2017.tif")
+
+
+terra::project(ratioSG2017,ratioHWSD,  filename='ratioSG2017_Reproj.tif', overwrite=TRUE)
+
+ratioSG2017<-rast('ratioSG2017_Reproj.tif')
+
+avRatio<-(ratioHWSD+ratioSG2017)/2
+
+writeRaster(avRatio, filename = "avRatio.tif")
+
+GCAM<-rast("GCAM_SOC_Raster1.tif")
+
+GCAM0-30<-GCAM * ratioHWSD
+
+writeRaster(GCAM0_30cm, filename = "GCAM0_30cm.tif")
+
+terra::project(croplandROC,FAO_0_30cm,  filename='cropland_Reproj.tif', overwrite=TRUE)
+
+#1800 Soil
+soc1800_30cm<-rast("SOCS_0_30cm_year_1800AD_10km.tif")
+
+terra::project(soc1800_30cm,FAO_0_30cm,  filename='soc1800_30cm_Reproj.tif', overwrite=TRUE)
+
+#heterotrophic resipration
+#g C m^-2 y^-1
+bondLam<-rast("heterotrophic_resp_Bond_Lamberty_2004.tif")
+#Mg C ha
+bondLamUnit<-bondLam/100
+
+terra::project(bondLamUnit,FAO_0_30cm,  filename='bondLamUnit_Reproj.tif', overwrite=TRUE)
+
+
+subke<-rast("heterotrophic_resp_Subke_2006.tif")
+#Mg C ha
+subkeUnit<-subke/100
+
+terra::project(bondLamUnit,FAO_0_30cm,  filename='subkeUnit_Reproj.tif', overwrite=TRUE)
+
+meanResp<-rast("soil_resp_mean_quantile_regress_forest.tif")

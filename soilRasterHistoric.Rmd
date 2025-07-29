@@ -1,0 +1,182 @@
+---
+title: "Land Carbon Recreation"
+author: "Mandy Liesch"
+date: "2023-02-08"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(terra)
+library(tidyverse)
+library(raster)
+library(exactextractr)
+library(sp)
+library(rgdal)
+library(sf)
+library(tidyverse)
+
+```
+
+
+
+## Data Sources
+### Data Files
+GCAM_Basin_IDs.csv: This file has the basin names, and GLU, and basin number. 
+
+GCAM 5.0 Core carbon Assumptions: This file has the managed and unmanaged soil carbon assumptions garnered from the land use in the [PNNL Technical Report](https://www.pnnl.gov/main/publications/external/technical_reports/PNNL-21025.pdf). The file has all different land uses, and will need to be manipulated and split by land use type. 
+
+Moirai SoilGrids 2017 Q3 Estimates: This file was used for the new GCAM 6.0 update, and utilizes the soilgrids 2017 Third Quartile values to assume steady state functions.
+
+
+### Raster Files
+Land Use Raster: Created by Sarah Harrison, this is an in home modification of the European Space Agency/MODIS/Ramenkutty Raster. 
+
+Values
+1: Cropland
+2: Forest
+3: Grassland
+4: Shrubland
+5: Urban Land
+6: RID
+7: Tundra
+8: Pasture
+
+
+### Shapefiles
+GCAM Basin Levels: There is an issue with the actual basin value level in the Moirai zip folder, so the region/boundary shapefile was used and dissolved to the Basin level in the igh projection. 
+
+# Results
+
+
+## Dissolve the Shapefile into Major Basins
+
+```{r}
+#Read in the Region/Basin Shapefile
+BasinShapeFile<-st_read("reg_basin_boundaries_moirai_landcells_3p1_0p5arcmin.shp") 
+
+#Check the projection
+st_crs(BasinShapeFile)
+
+#reproject the Basin Shape File to align with the soil carbon raster
+BasinShapeFile_igh<- st_transform(BasinShapeFile, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+#Use the dplyr package and the tidyverse notation to create the polygons to dissolve into. 
+
+Basin.ID <- BasinShapeFile_igh %>% 
+    group_by(basin_id) %>% 
+    summarise() 
+
+#check the basins overall
+
+ggplot(Basin.ID) + geom_sf(aes(fill = 'Basins'))
+```
+
+There are 232 different basins dissolved together. 
+
+## Merge Basin Names to the New Shapefile
+
+```{r}
+
+basinNames<-read_csv("GCAM_Basin_IDs.csv")
+
+basinNames$GLU_code<-NULL
+basinNames$GLU_Name<-NULL
+
+Basin.ID<-merge(basinNames, Basin.ID, by.x='Basin_ID', by.y='basin_id')
+
+head(Basin.ID)
+```
+
+## Summarize the GCAM core Carbon Document by Land Use
+
+```{r}
+carbonC<-read_csv("GCAM 5.0 Core carbon assumptions.csv")
+
+head(carbonC)
+
+#remove the unnecessary columns 
+carbonC$UniqueID<-NULL
+carbonC$`Area ha`<-NULL
+
+#Break the region and basin into two different columns
+carbon<-separate(carbonC, RegionBasinID, c('Region', 'Basin'), sep='_', remove=TRUE)
+
+#Remove the weird NA Columns
+carbon<- carbon %>% drop_na()
+
+head(carbon)
+```
+
+
+# Land Use Specific Processing
+
+## Cropland
+
+### Average together managed and unmanaged land by land type
+
+```{r}
+
+croplandC<- carbon %>% 
+  filter(str_detect(carbon$GCAMLand, "Crop")) %>%
+  group_by(Basin) %>%  
+  summarise_at(vars(soilC), list(soilC = mean))
+
+```
+
+
+### Merge Datafile and Shapefile
+```{r}
+cropBasinID<-merge(croplandC, Basin.ID, by.x='Basin', by.y='Basin_ID')
+
+maps<-st_as_sf(cropBasinID)
+
+class(maps)
+
+ggplot(maps) + geom_sf(aes(fill = soilC))
+
+#convert to the raster
+mapCrops<-vect(maps)
+
+setwd("C:/Users/aliesch/OneDrive - Environmental Protection Agency (EPA)/Desktop/Intermediate Rasters/Historic Land Use/Recreations")
+
+LandUse<-rast("Recreations/LU1700.tif")
+
+
+
+```
+
+
+
+### Use the land use raster to create a mask
+
+
+
+```{r}
+#Forest Classification
+# classified as 2 in land use change
+
+
+cropMask<- classify(LandUse, cbind(id=c(0, 1, 2, 3, 4, 5, 6, 7, 8, 26), 
+                                      v=c(NA, 1, NA, NA, NA, NA, NA, NA, NA, NA)), filename='cropMask.tif')
+
+plot(cropMask)
+
+#convert to the raster
+mapCrops<-vect(maps)
+
+cropRaster<-rasterize(mapCrops, cropMask, field="soilC", background=NA)
+```
+
+### Extract Land Use Values into a New Raster
+
+```{r}
+SC_1700_crops<- mask(cropRaster, cropMask, 
+                           inverse = FALSE, updatevalue = NA, filename = "SoilCRasters/SC_1700_crops.tif")
+```
+

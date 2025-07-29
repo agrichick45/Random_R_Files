@@ -1,0 +1,224 @@
+---
+title: "RasterCONUS"
+output: html_document
+date: "2024-08-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+
+library(terra)
+library(tidyverse)
+library(tidyterra)
+library(leaflet)
+library(ggplot2)
+```
+
+
+
+```{r pressure, echo=FALSE}
+setwd("C:/Users/ALIESCH/OneDrive - Environmental Protection Agency (EPA)/Documents/soilrastercomparison/rasters")
+
+FAO_0_30cm<-rast("Reproject_FAO_30cm.tif")
+
+HWSD0_30cm<-rast("HWSD_0-30_Reproj.tif")
+
+SG17_0_30cm<-rast("SG2017_0_30cm_Reproj.tif")
+
+SG20_0_30cm<-rast("SoilGrids2020_0-30.tif")
+
+Wang_0_30cm <-rast("Wang_CONUS_30cm_SOC_mean.tif")
+
+reproj_Wang_30cm<-project(Wang_0_30cm, SG20_0_30cm)
+
+writeRaster(reproj_Wang_30cm, "Wang_igh_CONUS_SOC.tif")
+
+reproj_Wang_30cm<-rast("Wang_igh_CONUS_SOC.tif")
+```
+
+```{r}
+setwd("C:/Users/ALIESCH/OneDrive - Environmental Protection Agency (EPA)/Desktop/AgCensus 2022")
+
+county<-vect("UScounties.shp")
+
+states <- aggregate(county, by='STATE_NAME')
+
+r_f <- states %>% filter(STATE_NAME != 'Alaska')
+CONUS <- r_f %>% filter(STATE_NAME != 'Hawaii')
+
+CONUS_igh<-project(CONUS, reproj_Wang_30cm)
+
+```
+
+
+```{r}
+CONUS_Wang<-crop(reproj_Wang_30cm, CONUS_igh)
+CONUS_Wang_10<-CONUS_Wang*10
+CONUS_FAO<-crop(FAO_0_30cm, CONUS_igh)
+CONUS_HWSD<-crop(HWSD0_30cm, CONUS_igh)
+CONUS_SG17<-crop(SG17_0_30cm, CONUS_igh)
+CONUS_SG20<-crop(SG20_0_30cm, CONUS_igh)
+
+CONUS_FAO_m<-mask(CONUS_FAO, CONUS_igh)
+CONUS_HWSD_m<-mask(CONUS_HWSD, CONUS_igh)
+CONUS_SG17_m<-mask(CONUS_SG17, CONUS_igh)
+CONUS_SG20_m<-mask(CONUS_SG20, CONUS_igh)
+CONUS_Wang_m<-mask(CONUS_Wang_10, CONUS_igh)
+
+c_CONUS_FAO_m<-clamp(CONUS_FAO_m,upper=200,values=T)
+c_CONUS_HWSD_m<-clamp(CONUS_HWSD_m,upper=200,values=T)
+c_CONUS_SG17_m<-clamp(CONUS_SG17_m,upper=200,values=T)
+c_CONUS_SG20_m<-clamp(CONUS_SG20_m,upper=200,values=T)
+c_CONUS_Wang_10<-clamp(CONUS_Wang_10,upper=200,values=T)
+```
+
+```{r}
+SOC30cm_Stack<-c(c_CONUS_FAO_m, c_CONUS_HWSD_m, c_CONUS_SG17_m, c_CONUS_SG20_m, c_CONUS_Wang_10)
+
+SOC30cm_CONUS_Stack<-project(SOC30cm_Stack, states)
+
+names(SOC30cm_CONUS_Stack) <- c("FAO Glosis 30 cm", "HWSD 30 cm", "SoilGrids 2017 30 cm", "SoilGrids 2020 30 cm", "Wang et. al, 2024, 30 cm")
+
+#https://rdrr.io/cran/terra/man/plet.html
+plet(SOC30cm_CONUS_Stack, 1:5, tiles="Streets", share=TRUE, collapse=FALSE) |> lines(CONUS, lwd=2)
+```
+
+```{r}
+minMap<-min(SOC30cm_CONUS_Stack, na.rm=T)
+whereMin<-which.min(SOC30cm_CONUS_Stack)
+maxMap<-max(SOC30cm_CONUS_Stack, na.rm=T)
+whereMax<-which.max(SOC30cm_CONUS_Stack)
+medianMap<-median(SOC30cm_CONUS_Stack, na.rm=T)
+rangeMap<-maxMap-minMap
+relRangeMap<-rangeMap/maxMap
+
+```
+
+```{r}
+SOC30cm_Stack_NSG<-c(c_CONUS_FAO_m, c_CONUS_HWSD_m, c_CONUS_SG20_m, c_CONUS_Wang_10)
+
+SOC30cm_CONUS_Stack_NSG<-project(SOC30cm_Stack_NSG, states)
+
+names(SOC30cm_CONUS_Stack_NSG) <- c("FAO Glosis 30 cm", "HWSD 30 cm", "SoilGrids 2020 30 cm", "Wang et. al, 2024, 30 cm")
+
+#https://rdrr.io/cran/terra/man/plet.html
+#plet(SOC30cm_CONUS_Stack_NSG, 1:5, tiles="Streets", share=TRUE, collapse=FALSE) |> lines(CONUS, lwd=2)
+```
+
+
+```{r}
+minMap_NSG<-min(SOC30cm_CONUS_Stack_NSG, na.rm=T)
+whereMin_NSG<-which.min(SOC30cm_CONUS_Stack_NSG)
+maxMap_NSG<-max(SOC30cm_CONUS_Stack_NSG, na.rm=T)
+whereMax_NSG<-which.max(SOC30cm_CONUS_Stack_NSG)
+medianMap_NSG<-median(SOC30cm_CONUS_Stack_NSG, na.rm=T)
+rangeMap_NSG<-maxMap_NSG-minMap_NSG
+relRangeMap_NSG<-rangeMap_NSG/maxMap_NSG
+
+```
+
+
+```{r}
+minMap<- minMap %>% rename(
+  'All Raster Minimum' = min)
+maxMap<-maxMap %>% rename(
+  'All Raster Maximum' = max)
+minMap_NSG<-minMap_NSG %>% rename(
+  'Four Raster Minimum' = min)
+maxMap_NSG<-maxMap_NSG %>% rename(
+  'Four Raster Maximum' = max)
+
+stackStats<-c(minMap, maxMap, minMap_NSG, maxMap_NSG)
+relRangeMap <- relRangeMap %>% rename(
+  'Relative Range of Five Rasters' = max)
+
+relRangeMap_NSG <- relRangeMap_NSG %>% rename(
+  'Relative Range of Four Rasters' = max)
+
+medianMap<-medianMap %>% rename(
+  'Five Raster Median Values' = median)
+
+medianMap_NSG<-medianMap_NSG %>% rename(
+  'Four Raster Median Values' = median)
+
+whereMin<-whereMin %>% rename(
+  'Minimums Values for Five Rasters' = which.min)
+
+whereMax<-whereMax %>% rename(
+  'Maximum Values for Five Rasters' = which.max)
+
+whereMin_NSG_edit<-ifel(whereMin_NSG == 3, 4, whereMin_NSG)
+whereMin_NSG_edit_2<-ifel(whereMin_NSG == 4, 5, whereMin_NSG_edit)
+
+whereMin_NSG_edit_2<-whereMin_NSG_edit_2 %>% rename(
+  'Minimum Values for Four Rasters' = which.min)
+
+
+whereMax_NSG_edit<-ifel(whereMax_NSG == 3, 4, whereMax_NSG)
+whereMax_NSG_edit_2<-ifel(whereMax_NSG == 4, 5, whereMax_NSG_edit)
+
+whereMax_NSG_edit_2<-whereMax_NSG_edit_2 %>% rename(
+  'Maximum Values for Four Rasters' = which.max)
+
+```
+
+```{r}
+
+ggplot() +
+  geom_spatraster(data = stackStats) +
+  # Faceting with tidyterra
+  facet_wrap(~lyr, ncol = 2)+
+  scale_fill_whitebox_c(
+    palette = "deep") +
+  labs(fill = "Mg C/ha", title='Soil Organic Carbon Levels for Different Raster Configurations') 
+```
+
+
+```{r}
+
+ggplot() +
+  geom_spatraster(data =whereMin) +
+  geom_spatraster(data =whereMin_NSG_edit_2) +
+  geom_spatraster(data =whereMax) +
+  geom_spatraster(data =whereMax_NSG_edit_2) +
+  facet_wrap(~lyr, ncol = 2, nrow =2)+
+  scale_fill_whitebox_c(
+    labels=c('FAO', 'HWSD', 'SG17', 'SG20', 'Wang'),
+    palette = "deep",
+    n.breaks = 5,
+    guide = guide_legend(reverse = FALSE))+
+  labs(fill = "Raster")
+
+```
+
+```{r}
+
+
+ggplot() +
+  geom_spatraster(data = medianMap) +
+  geom_spatraster(data = medianMap_NSG) +
+  # Faceting with tidyterra
+  facet_wrap(~lyr, ncol = 2)+
+  scale_fill_whitebox_c(
+    palette = "deep") +
+  labs(fill = "Mg C/ha") 
+```
+
+
+
+```{r}
+
+ggplot() +
+  geom_spatraster(data = relRangeMap) +
+  geom_spatraster(data = relRangeMap_NSG) +
+  # Faceting with tidyterra
+  facet_wrap(~lyr, ncol = 2)+
+  scale_fill_whitebox_c(
+    palette = "deep", 
+    direction = -1) +
+  labs(fill = "Relative Range")

@@ -1,0 +1,156 @@
+---
+title: "GLOBIOUM Outputs"
+output: html_document
+date: "2023-01-20"
+---
+
+```{r setup, include=FALSE}
+library(maptools)
+library(terra) # terra 1.6.17
+library(tidyverse) #ggplot2 3.3.6, purrr 0.3.5, tibble 3.1.8, dplyr 1.0.10, tidyr 1.2.1, stringr 1.4.1, readr 2.1.3, forcats 0.5.2 
+
+library(raster)
+library(exactextractr)
+library(sp)
+library(rgdal)
+library(sf)
+library(tidyverse)
+library(USA.state.boundaries)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+data(wrld_simpl)
+plot(wrld_simpl)
+
+shapefile(wrld_simpl, "worldshapefile.shp", overwrite=TRUE)
+worldShape<-st_read("worldshapefile.shp") 
+
+
+spatial_gadm <- gadm_sp_loadCountries(fileNames = 'USA', level = 2, basefile = './shapefiles', simplify=0.01)
+plot(spatial_gadm[[2]])
+
+worldShapeProj<- st_transform(worldShape, CRS("+proj=igh +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") )
+
+
+workingDir<- "~/soilrastercomparison"
+setwd(workingDir)
+
+#Remove Greenland and Antarctica 
+
+wsp <- subset(worldShapeProj, UN!= 10)
+worldMap <- subset(wsp, UN!= 304)
+304
+Greenland
+
+10
+Antarctica
+
+
+# Load in the Rasters
+
+
+GCAM<-rast("rasters/GCAM0_30cm.tif")
+plot(GCAM, main='Woods Hole Data 30 cm Soil Carbon Stocks')
+plot(worldMap, col="transparent", add=TRUE)
+
+
+HWSD30cm<-rast("rasters/HWSDa_top.tif")
+plot(HWSD30cm, main='Amended HWSD 30 cm Soil Carbon Stocks')
+plot(worldMap, col="transparent", add=TRUE)
+
+FAOGlosis<-rast("rasters/Reproject_FAO_30cm.tif")
+plot(FAOGlosis, main='FAO Glosis 30 cm Soil Carbon Stocks')
+plot(worldMap, col="transparent", add=TRUE)
+
+
+SoilGrids2017<-rast("rasters/SG2017_0_30cm_Reproj.tif")
+plot(SoilGrids2017, main='SoilGrids 2017 30 cm Soil Carbon Stocks')
+plot(worldMap, col="transparent", add=TRUE)
+
+SoilGrids2020<-rast("rasters/SoilGrids2020_0-30.tif")
+plot(SoilGrids2020, main='SoilGrids 2020 30 cm Soil Carbon Stocks')
+plot(worldMap, col="transparent", add=TRUE)
+
+plot(GCAM, main='GCAM 30 cm Soil Carbon Stocks')
+plot(worldShapeProj, bg="transparent", add=TRUE)
+
+
+SOC_HWSD_Fix <- mask(HWSD30cm, GCAM, 
+                               inverse = FALSE, updatevalue = NA) 
+
+plot(SOC_HWSD_Fix, main='Harmonized World Soils Database 30 cm Soil Carbon Stocks')
+plot(BasinShapeFile_igh, col="transparent", add=TRUE)
+
+SOC_Glosis_Fix <- mask(FAOGlosis, GCAM, 
+                               inverse = FALSE, updatevalue = NA) 
+
+SOC_SG17_Fix <- mask(SoilGrids2017, GCAM, 
+                               inverse = FALSE, updatevalue = NA) 
+
+SOC_SG20_Fix <- mask(SoilGrids2020, GCAM, 
+                               inverse = FALSE, updatevalue = NA) 
+
+remove(FAOGlosis, HWSD30cm, SoilGrids2017, SoilGrids2020)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+# Use Exact_Extract() to extract summary statistics of the CarbonSoilRaster by each basin
+worldShapeProj$GCAM_Mean<- exact_extract(GCAM, worldShapeProj, 'mean')
+worldShapeProj$GCAM_Median<- exact_extract(GCAM, worldShapeProj, fun='quantile', quantiles= 0.5)
+worldShapeProj$FAO_Mean<- exact_extract(SOC_Glosis_Fix, worldShapeProj, 'mean')
+worldShapeProj$FAO_Median<- exact_extract(SOC_Glosis_Fix, worldShapeProj, fun='quantile', quantiles= 0.5)
+worldShapeProj$HWSD_Mean<- exact_extract(SOC_HWSD_Fix, worldShapeProj, 'mean')
+worldShapeProj$HWSD_Median<- exact_extract(SOC_HWSD_Fix,worldShapeProj, fun='quantile', quantiles= 0.5)
+
+worldShapeProj$SG17_Mean<- exact_extract(SOC_SG17_Fix, worldShapeProj, 'mean')
+worldShapeProj$SG17_Median<- exact_extract(SOC_SG17_Fix,worldShapeProj, fun='quantile', quantiles= 0.5)
+
+worldShapeProj$SG20_Mean<- exact_extract(SOC_SG20_Fix, worldShapeProj, 'mean')
+worldShapeProj$SG20_Median<- exact_extract(SOC_SG20_Fix,worldShapeProj, fun='quantile', quantiles= 0.5)
+```
+
+
+```{r}
+
+
+WSCS <- na.omit(worldShapeProj)  
+
+
+
+WSCS$max_mean <- pmax(WSCS$GCAM_Mean, WSCS$HWSD_Mean, WSCS$SG17_Mean, WSCS$SG20_Mean, WSCS$FAO_Mean)
+WSCS$min_mean <- pmin(WSCS$GCAM_Mean, WSCS$HWSD_Mean, WSCS$SG17_Mean, WSCS$SG20_Mean, WSCS$FAO_Mean)
+WSCS$range_mean<- WSCS$max_mean - WSCS$min_mean
+WSCS$mean_mean <- ((WSCS$GCAM_Mean + WSCS$HWSD_Mean + WSCS$SG17_Mean + WSCS$SG20_Mean + WSCS$FAO_Mean)/5)
+WSCS$range_mean_ratio<-WSCS$range_mean/WSCS$mean_mean
+
+
+WSCS$max_median <- pmax(WSCS$GCAM_Median, WSCS$HWSD_Median, WSCS$SG17_Median, WSCS$SG20_Median, WSCS$FAO_Median)
+WSCS$min_median <- pmin(WSCS$GCAM_Median, WSCS$HWSD_Median, WSCS$SG17_Median, WSCS$SG20_Median, WSCS$FAO_Median)
+WSCS$range_median<- WSCS$max_median - WSCS$min_median
+WSCS$mean_median <- ((WSCS$GCAM_Median + WSCS$HWSD_Median + WSCS$SG17_Median + WSCS$SG20_Median + WSCS$FAO_Median)/5)
+WSCS$range_median_ratio<-WSCS$range_median/WSCS$mean_median
+
+WorldSoilCarbonStats<-WSCS
+
+WorldSoilCarbonStats$geometry<-NULL
+WorldSoilCarbonStats$FIPS<-NULL
+WorldSoilCarbonStats$ISO2<-NULL
+WorldSoilCarbonStats$ISO3<-NULL
+
+
+write.csv(WorldSoilCarbonStats, "completeWSC.csv", overwrite=TRUE)
+```
+
+
+```{r}
+#Major Plot Points:
